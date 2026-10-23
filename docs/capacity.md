@@ -1,4 +1,52 @@
-# 阶段 1.1 全量容量实测
+# 容量实测
+
+## 阶段 2：OSV 与签名数据包
+
+测量时间：2026-10-23 06:17–07:05 UTC。PostgreSQL 17.11，迁移 `0003`。先对每个生态导入 1000 条样本，再从同一固定 generation 续传到 EOF；以下不是样本外推。
+
+| OSV 基础生态 | 完整记录数 | 全量续传耗时 | 目标发行版受影响包行数 |
+| --- | ---: | ---: | ---: |
+| Debian | 72,020 | 169 秒 | 121,848 |
+| Ubuntu | 71,490 | 1,479 秒 | 2,201,602 |
+| Alpine | 4,774 | 16 秒 | 10,072 |
+| Rocky Linux | 4,532 | 17 秒 | 14,464 |
+| AlmaLinux | 6,206 | 51 秒 | 68,214 |
+
+Ubuntu 的公告记录会展开为大量“源码包 × 发行版/渠道”事实，因此公告数和 `affected_packages` 行数不能直接比较。五个基线均为 `completed=true`；紧接其后的首轮 `modified_id.csv` 增量均处理 0 条并成功完成。
+
+| 数据库项目 | 实测值 |
+| --- | ---: |
+| 数据库总大小 | 6,523,500,211 字节（6.08 GiB） |
+| `vulnerabilities` | 423,284 行 |
+| `osv_advisories` | 159,022 行 |
+| `affected_packages` | 2,416,200 行 |
+| `vulnerability_events` | 651,819 行；全部为基线事件 |
+| CVE `raw_record` 存储值 / 逻辑文本 | 887,850,978 / 1,638,316,583 字节 |
+| OSV `raw_record` 存储值 / 逻辑文本 | 1,907,809,316 / 8,840,198,444 字节 |
+
+阶段 2 前五大表（`pg_total_relation_size`）：
+
+| 表 | 表及 TOAST | 索引 | 总大小 |
+| --- | ---: | ---: | ---: |
+| `affected_packages` | 1,739.61 MiB | 512.70 MiB | 2,252.31 MiB |
+| `osv_advisories` | 1,935.51 MiB | 9.96 MiB | 1,945.47 MiB |
+| `vulnerabilities` | 1,512.59 MiB | 42.33 MiB | 1,554.92 MiB |
+| `vulnerability_events` | 242.87 MiB | 141.18 MiB | 384.05 MiB |
+| `epss_scores` | 28.84 MiB | 17.18 MiB | 46.02 MiB |
+
+阶段 2 前五大索引：
+
+| 索引 | 大小 |
+| --- | ---: |
+| `uq_affected_source_entry` | 403.75 MiB |
+| `vulnerability_events_dedup_key_key` | 78.06 MiB |
+| `affected_packages_pkey` | 51.77 MiB |
+| `ix_affected_packages_advisory_id` | 23.82 MiB |
+| `vulnerabilities_pkey` | 21.31 MiB |
+
+13 个数据包首次生成耗时 222 秒。初版内存聚合实现触及 2 GiB 上限并退出 137；改成流式 JSON 和流式 zstd 后，成功生成时人工点测 worker 约 110 MiB。整个阶段的 15 秒监控同时包含失败尝试，观测到 worker job 最高 1,634.30 MiB、PostgreSQL 最高 2,643.97 MiB。线上 sites/civilflow 和 SecWatch 健康接口的采样异常数为 0，最低可用磁盘 167.54 GiB。
+
+## 阶段 1.1：CVE / KEV / EPSS 全量
 
 测量时间：2026-10-23T04:36:27.743178+00:00。PostgreSQL 17.11，迁移 `0002`。以下数据来自实际开发数据库，不是样本线性外推。阶段 1 的样本测量为 14,751,411 字节（14.07 MiB）；本次按 KEV → EPSS → CVE 的顺序导入至 EOF。
 

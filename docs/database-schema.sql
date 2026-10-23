@@ -40,6 +40,10 @@ CREATE TABLE public.affected_packages (
     source character varying(32) NOT NULL,
     source_url text NOT NULL,
     entry_hash character varying(64) NOT NULL,
+    advisory_id character varying(128),
+    package_key character varying(16),
+    requires_subscription boolean DEFAULT false NOT NULL,
+    source_metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT ck_affected_status CHECK (((status)::text = ANY ((ARRAY['fixed'::character varying, 'unfixed'::character varying, 'wont_fix'::character varying, 'unknown'::character varying])::text[])))
 );
 
@@ -124,6 +128,67 @@ CREATE TABLE public.kev_entries (
     is_active boolean DEFAULT true NOT NULL,
     removed_at timestamp with time zone
 );
+
+
+--
+-- Name: osv_advisories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.osv_advisories (
+    id character varying(128) NOT NULL,
+    ecosystem character varying(32) NOT NULL,
+    modified_at timestamp with time zone NOT NULL,
+    withdrawn_at timestamp with time zone,
+    record_hash character varying(64) NOT NULL,
+    raw_record jsonb NOT NULL
+);
+
+
+--
+-- Name: scheduled_tasks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scheduled_tasks (
+    name character varying(32) NOT NULL,
+    next_run_at timestamp with time zone NOT NULL,
+    last_finished_at timestamp with time zone
+);
+
+
+--
+-- Name: task_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.task_runs (
+    id bigint NOT NULL,
+    task character varying(32) NOT NULL,
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone,
+    elapsed_seconds double precision,
+    attempt integer NOT NULL,
+    status character varying(16) NOT NULL,
+    result jsonb NOT NULL,
+    error character varying(256)
+);
+
+
+--
+-- Name: task_runs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.task_runs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: task_runs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.task_runs_id_seq OWNED BY public.task_runs.id;
 
 
 --
@@ -212,6 +277,13 @@ ALTER TABLE ONLY public.affected_packages ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: task_runs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_runs ALTER COLUMN id SET DEFAULT nextval('public.task_runs_id_seq'::regclass);
+
+
+--
 -- Name: vulnerability_events id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -259,6 +331,30 @@ ALTER TABLE ONLY public.kev_entries
 
 
 --
+-- Name: osv_advisories osv_advisories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.osv_advisories
+    ADD CONSTRAINT osv_advisories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scheduled_tasks scheduled_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scheduled_tasks
+    ADD CONSTRAINT scheduled_tasks_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: task_runs task_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_runs
+    ADD CONSTRAINT task_runs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: affected_packages uq_affected_source_entry; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -299,10 +395,24 @@ ALTER TABLE ONLY public.vulnerability_events
 
 
 --
+-- Name: ix_affected_bundle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_affected_bundle ON public.affected_packages USING btree (distro, release);
+
+
+--
 -- Name: ix_affected_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_affected_lookup ON public.affected_packages USING btree (ecosystem, package_name);
+
+
+--
+-- Name: ix_affected_packages_advisory_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_affected_packages_advisory_id ON public.affected_packages USING btree (advisory_id);
 
 
 --
@@ -331,6 +441,20 @@ CREATE INDEX ix_events_time_priority ON public.vulnerability_events USING btree 
 --
 
 CREATE INDEX ix_kev_entries_date_added ON public.kev_entries USING btree (date_added);
+
+
+--
+-- Name: ix_osv_advisories_ecosystem; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_osv_advisories_ecosystem ON public.osv_advisories USING btree (ecosystem);
+
+
+--
+-- Name: ix_task_runs_task; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_runs_task ON public.task_runs USING btree (task);
 
 
 --
@@ -368,6 +492,14 @@ ALTER TABLE ONLY public.affected_packages
 
 ALTER TABLE ONLY public.epss_scores
     ADD CONSTRAINT epss_scores_vulnerability_id_fkey FOREIGN KEY (vulnerability_id) REFERENCES public.vulnerabilities(id) ON DELETE CASCADE;
+
+
+--
+-- Name: affected_packages fk_affected_advisory; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affected_packages
+    ADD CONSTRAINT fk_affected_advisory FOREIGN KEY (advisory_id) REFERENCES public.osv_advisories(id);
 
 
 --

@@ -87,6 +87,7 @@ class AffectedPackage(Base):
             "status IN ('fixed','unfixed','wont_fix','unknown')", name="ck_affected_status"
         ),
         Index("ix_affected_lookup", "ecosystem", "package_name"),
+        Index("ix_affected_bundle", "distro", "release"),
     )
     id: Mapped[int] = mapped_column(IDENTITY, primary_key=True, autoincrement=True)
     vulnerability_id: Mapped[str] = mapped_column(
@@ -103,6 +104,44 @@ class AffectedPackage(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     entry_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    advisory_id: Mapped[str | None] = mapped_column(ForeignKey("osv_advisories.id"), index=True)
+    package_key: Mapped[str | None] = mapped_column(String(16))
+    requires_subscription: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    source_metadata: Mapped[dict] = mapped_column(
+        DOCUMENT, default=dict, server_default="{}", nullable=False
+    )
+
+
+class OSVAdvisory(Base):
+    __tablename__ = "osv_advisories"
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    ecosystem: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_record: Mapped[dict] = mapped_column(DOCUMENT, nullable=False)
+
+
+class ScheduledTask(Base):
+    __tablename__ = "scheduled_tasks"
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskRun(Base):
+    __tablename__ = "task_runs"
+    id: Mapped[int] = mapped_column(IDENTITY, primary_key=True, autoincrement=True)
+    task: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    elapsed_seconds: Mapped[float | None] = mapped_column(Float)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    result: Mapped[dict] = mapped_column(DOCUMENT, default=dict, nullable=False)
+    error: Mapped[str | None] = mapped_column(String(256))
 
 
 class KEVEntry(Base):

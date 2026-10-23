@@ -80,6 +80,7 @@
   "schema": 1,
   "distro": "debian",
   "release": "12",
+  "package_key": "source",
   "generated_at": "2026-10-23T03:00:00Z",
   "sources": { "osv": "2026-10-23T02:41:00Z", "kev": "2026-10-22", "epss": "2026-10-22" },
   "source_packages": {
@@ -89,6 +90,9 @@
         "aliases": ["DSA-XXXX-1"],
         "status": "fixed",
         "fixed_version": "3.0.15-1~deb12u1",
+        "ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "3.0.15-1~deb12u1"}]}],
+        "requires_subscription": false,
+        "fixes": [{"version": "3.0.15-1~deb12u1", "requires_subscription": false}],
         "severity": "HIGH",
         "cvss": 7.5,
         "kev": false,
@@ -101,6 +105,11 @@
 ```
 
 - `status` 取值：`fixed` | `unfixed`（发行版尚未修复）| `wont_fix`（如 Debian no-dsa / ignored）。
+- 阶段 2 实测的 Debian OSV 可以用“只有 `introduced`、没有 `fixed`”表达尚未修复，但没有保留 Security Tracker 的 `no-dsa` / `ignored` 原因；因此当前转换只能诚实输出 `unfixed`，不能推断为 `wont_fix`。阶段 3 再决定是否直连 Debian Security Tracker 补齐该语义。
+- `package_key` 决定阶段 3 扫描器用什么本机包名匹配：Debian/Ubuntu 为 `source`，Alpine 为 `origin`。阶段 2 对真实 OSV 数据的抽样显示 Rocky Linux 当前也是源 RPM 名（`source`），而 AlmaLinux 是二进制 RPM 名（`binary`）；不能按发行版家族想当然地统一处理。
+- `ranges` 原样保留 OSV 的 `ECOSYSTEM` 事件及 `introduced` / `fixed` / `last_affected`，服务端不将它们换算成上游版本。版本比较留给阶段 3 的 dpkg/rpm/apk 成熟实现。
+- Ubuntu Pro 修复在 `requires_subscription` 和逐修复项 `fixes[].requires_subscription` 中明确标记。扫描器遇到这类修复时提示“修复仅在 Ubuntu Pro 中提供”，不得输出普通升级提示。FIPS、Realtime、Livepatch 专用生态不混入标准发行版数据包。
+- `coverage.missing_package_means` 固定为 `unknown`；包名不在数据包中不能被解释为“安全”。
 - 文件名带内容哈希：`bundles/debian-12.<sha256前12位>.json.zst` + `.minisig`。`manifest.json` 指向最新文件，并通过 Cloudflare 长期缓存。
 - 同时发布到 GitHub Releases 作为镜像。
 
@@ -233,6 +242,8 @@ CVSS 只是其中一个维度。不得根据评分推断"可远程提权"之类�
 - **首批产品页**与 L2 的 12 个产品一致。之后社区每贡献一条产品规则，就自动多出一个产品页。
 
 **V0.1 服务**：`web`、`worker`、`postgres`。只有当 VPS 上没有现有反向代理时，才增加 `caddy`。
+
+worker 是常驻进程，以 PostgreSQL advisory lock 保证同一数据库只有一个调度 leader。KEV、cvelistV5 delta、OSV delta 每小时运行，EPSS 每日运行；首次启动按不同分钟错开，失败最多重试 3 次并将每次耗时、状态和错误写入 `task_runs`。只有采集实际处理了变更时才检查数据包内容，且只替换内容指纹发生变化的发行版数据包。
 
 **数据规模**：cvelistV5 约 30 万条记录。数据库体积以实测为准，并记录在 `docs/capacity.md` 中。
 

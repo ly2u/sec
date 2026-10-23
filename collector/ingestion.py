@@ -65,7 +65,16 @@ def ingest(
                 source,
             )
             restart = True
-        has_completed = bool(state and (state.has_completed or state.completed))
+        parent_source = (
+            "cve:baseline"
+            if source == "cve:delta"
+            else "osv:" + source.removeprefix("osv:delta:")
+            if source.startswith("osv:delta:")
+            else None
+        )
+        parent = session.get(IngestionState, parent_source) if parent_source else None
+        parent_completed = bool(parent and (parent.has_completed or parent.completed))
+        has_completed = bool(state and (state.has_completed or state.completed)) or parent_completed
         if state is None:
             state = IngestionState(source=source)
             session.add(state)

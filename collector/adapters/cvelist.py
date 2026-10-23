@@ -223,9 +223,15 @@ class CVEAdapter:
             else since
         )
         if not state and not since:
-            raise ValueError(
-                "Initial delta requires --since; do not silently skip baseline history"
-            )
+            baseline = state_for(engine, "cve:baseline")
+            pinned = baseline["cursor"].get("url", "") if baseline else ""
+            boundary = re.search(r"(\d{4}-\d{2}-\d{2})_all_CVEs_at_midnight", pinned)
+            if baseline and (baseline["completed"] or baseline["has_completed"]) and boundary:
+                since = boundary[1] + "T00:00:00Z"
+            else:
+                raise ValueError(
+                    "Initial delta requires --since; do not silently skip baseline history"
+                )
         # Do not silently bridge a gap outside the official rolling log's coverage.
         if since and timestamp(since) < min(timestamp(entry["fetchTime"]) for entry in log):
             raise ValueError("Delta watermark expired; a new baseline is required")

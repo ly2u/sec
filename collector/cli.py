@@ -30,7 +30,9 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("idle", help="Phase 1 worker: wait, do not automatically ingest")
     commands.add_parser("status")
-    for name in ("cve-baseline", "cve-delta", "kev", "epss"):
+    commands.add_parser("worker", help="Run the PostgreSQL-locked persistent scheduler")
+    commands.add_parser("bundles", help="Publish changed signed distro bundles")
+    for name in ("cve-baseline", "cve-delta", "kev", "epss", "osv-baseline", "osv-delta"):
         command = commands.add_parser(name)
         size = command.add_mutually_exclusive_group()
         size.add_argument("--limit", type=int, default=1000)
@@ -42,6 +44,10 @@ def main():
             command.add_argument("--url", help="Override an approved official source URL")
         if name == "cve-delta":
             command.add_argument("--since", help="Explicit initial delta watermark (ISO UTC)")
+        if name.startswith("osv-"):
+            from collector.distros import BASES
+
+            command.add_argument("--ecosystem", required=True, choices=list(BASES))
     args = parser.parse_args()
     if args.command == "idle":
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -49,6 +55,16 @@ def main():
         while True:
             time.sleep(30)
     engine = engine_for()
+    if args.command == "worker":
+        from collector.scheduler import run
+
+        run(engine)
+        return
+    if args.command == "bundles":
+        from collector.bundles import generate
+
+        print(json.dumps(generate(engine)))
+        return
     if args.command == "status":
         with Session(engine) as session:
             counts = {
@@ -91,6 +107,14 @@ def main():
             result = CVEAdapter(http).delta(engine, since=args.since, **kwargs)
         elif args.command == "kev":
             result = KEVAdapter(http).run(engine, **kwargs)
+        elif args.command.startswith("osv-"):
+            from collector.adapters.osv import OSVAdapter
+
+            adapter = OSVAdapter(http)
+            if args.command == "osv-baseline":
+                result = adapter.baseline(engine, args.ecosystem, **kwargs)
+            else:
+                result = adapter.delta(engine, args.ecosystem, limit=kwargs["limit"])
         else:
             result = EPSSAdapter(http).run(engine, url=args.url, **kwargs)
         print(json.dumps(result), flush=True)

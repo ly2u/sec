@@ -263,6 +263,7 @@ def test_migration_0002_preserves_data_and_backfills_baseline(db, monkeypatch):
             )
         )
     command.upgrade(config, "0002")
+    command.upgrade(config, "head")
     command.check(config)
     with Session(db) as session:
         assert session.get(Vulnerability, "CVE-2020-10000").adp_kev_flag

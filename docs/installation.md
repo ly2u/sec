@@ -1,6 +1,6 @@
-# 阶段 1 开发环境
+# 阶段 2 开发环境
 
-本阶段提供数据底座、采集 CLI 和数据库健康接口，尚未提供漏洞站点、数据包或扫描器。工作目录固定为 `/opt/secwatch-dev`。
+本阶段提供数据底座、采集 CLI、常驻调度器、签名数据包和数据库健康接口；尚未提供漏洞站点或扫描器。工作目录固定为 `/opt/secwatch-dev`。
 
 ## 启动
 
@@ -27,14 +27,15 @@ postgres 只加入 `internal: true` 的项目网络 `secwatch-dev_db`，不直�
 | worker | 2g（2 GiB） | 1.5 | 2g |
 | web | 1g（1 GiB） | 1.0 | 1g |
 
-## 有上限的采集
+## 常驻 worker 与有上限的手工采集
 
-worker 默认只等待显式命令，不会后台导入全部数据。默认上限为 1000，`--limit` 必须为正数。阶段 1 使用样本验收；阶段 1.1 经站长授权执行 `--all` 全量导入，实测结果见 `capacity.md`。
+worker 默认运行 PostgreSQL advisory lock 保护的常驻调度器。KEV、`cve:delta`、OSV 每小时一次，EPSS 每日一次，首次启动分别错开 2 分钟；每轮结果写入 `task_runs`。手工采集默认上限仍为 1000，`--limit` 必须为正数；全量必须显式使用 `--all`。
 
 ```bash
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli cve-baseline --limit 1000
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli kev --limit 1000
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli epss --limit 1000
+docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli osv-baseline --ecosystem Debian --limit 1000
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli status
 ```
 
@@ -50,6 +51,10 @@ docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m c
 - 官方 KEV 身份只根据 JOIN `kev_entries` 且 `is_active=true` 判断，`adp_kev_flag` 仅保留 CISA ADP 原始事实。只有完整目录导入完成后，才将已撤回项标为非活跃、保留原记录并生成 P2 `removed_from_kev` 事件。
 - CVSS 保留全部评分及来源，主评分优先 CNA 3.1、CISA-ADP 3.1、CNA 4.0、CISA-ADP 4.0、3.0、2.0；严重度从主评分数值推导。优先级阈值按架构 D4 使用 CVSS 3.x。
 - 官方 delta 条目带有源端错误时，记录警告、继续处理其中可用的记录，并将条目保存在 `ingestion_state.cursor.warnings`，供后续核查。
+- OSV 基线下载基础生态 ZIP，并按 `affected[].package.ecosystem` 拆分；增量使用时间倒序的 `modified_id.csv`。发行版范围只接受 `ECOSYSTEM`，原样保存 `introduced`、`fixed`、`last_affected`。
+- 数据包私钥只存在宿主机 `secrets/bundle-signing.key`（`0600`，被 Git 忽略），仅以只读挂载给 worker；公钥在 `keys/bundle-signing.pub`。私钥必须另做离线备份，禁止经 Git 或聊天传输。
+- worker 对独立 `bundles` 卷可写，web 只读。发布顺序是哈希 `.json.zst`、`.minisig`，最后原子替换 `manifest.json`；未引用的旧哈希文件保留 7 天。
+- `manifest.json` 返回 `public, max-age=60, must-revalidate` 与 ETag；哈希文件和签名返回 `public, max-age=31536000, immutable`。
 
 全量导入显式使用 `--all`，与 `--limit` 互斥；执行前检查磁盘和负载。按 KEV、EPSS、CVE 顺序运行：
 
@@ -57,6 +62,11 @@ docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m c
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli kev --all
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli epss --all
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli cve-baseline --all
+for ecosystem in Debian Ubuntu Alpine 'Rocky Linux' AlmaLinux; do
+  docker compose --env-file .env -f deploy/compose.yaml exec -T worker \
+    python -m collector.cli osv-baseline --ecosystem "$ecosystem" --all
+done
+docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli bundles
 ```
 
 ## 测试与迁移检查

@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.9.0",
+  "id": "ALSA-2026:87079",
+  "modified": "2026-10-22T15:41:54.309161408Z",
+  "related": [
+    "CVE-2026-109618",
+    "CVE-2026-109619",
+    "CVE-2026-91765"
+  ],
+  "references": [
+    {
+      "type": "ADVISORY",
+      "url": "https://access.redhat.com/errata/RHSA-2026:87079"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://access.redhat.com/security/cve/CVE-2026-109618"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://access.redhat.com/security/cve/CVE-2026-109619"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://access.redhat.com/security/cve/CVE-2026-91765"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://bugzilla.redhat.com/2541646"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://bugzilla.redhat.com/2553995"
+    },
+    {
+      "type": "REPORT",
+      "url": "https://bugzilla.redhat.com/2554177"
+    },
+    {
+      "type": "ADVISORY",
+      "url": "https://errata.almalinux.org/9/ALSA-2026-87079.html"
+    }
+  ],
+  "affected": [
+    {
+      "package": {
+        "name": "apcu-panel",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/apcu-panel"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "5.1.23-1.module_el9.6.0+151+5f31e576"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-bcmath",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-bcmath"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-cli",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-cli"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-common",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-common"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-dba",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-dba"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-dbg",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-dbg"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    },
+    {
+      "package": {
+        "name": "php-devel",
+        "ecosystem": "AlmaLinux:9",
+        "purl": "pkg:rpm/almalinux/php-devel"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "8.3.36-1.module_el9.8.0+330+fdc30075"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "source": "https://github.com/AlmaLinux/osv-database/blob/master/advisories/almalinux9/ALSA-2026:87079.json"
+      }
+    }
+  ]
+}

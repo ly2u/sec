@@ -19,6 +19,7 @@ ALLOWED_HOSTS = {
     "api.first.org",
     "epss.empiricalsecurity.com",
     "epss.cyentia.com",
+    "storage.googleapis.com",
 }
 RETRYABLE = {429, 500, 502, 503, 504}
 
@@ -45,12 +46,14 @@ class FeedHTTP:
         self.owns_client = client is None
         self.sleep = sleep
         self.attempts = attempts
+        self.retry_count = 0
 
     def close(self):
         if self.owns_client:
             self.client.close()
 
     def backoff(self, attempt, response=None):
+        self.retry_count += 1
         retry_after = response.headers.get("Retry-After", "") if response is not None else ""
         try:
             seconds = float(retry_after)
@@ -61,10 +64,10 @@ class FeedHTTP:
                 seconds = 2**attempt + random.random()
         self.sleep(min(60, max(0, seconds)))
 
-    def _open(self, url):
+    def _open(self, url, method="GET"):
         for redirect in range(6):
             validate_url(url)
-            request = self.client.build_request("GET", url)
+            request = self.client.build_request(method, url)
             response = self.client.send(request, stream=True, follow_redirects=False)
             if response.is_redirect:
                 location = response.headers.get("Location")
@@ -120,3 +123,15 @@ class FeedHTTP:
 
     def json(self, url):
         return json.loads(self.read(url))
+
+    def headers(self, url):
+        for attempt in range(self.attempts):
+            response = self._open(url, "HEAD")
+            try:
+                if response.status_code in RETRYABLE and attempt + 1 < self.attempts:
+                    self.backoff(attempt, response)
+                    continue
+                response.raise_for_status()
+                return response.headers
+            finally:
+                response.close()

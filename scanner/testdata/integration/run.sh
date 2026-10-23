@@ -117,14 +117,14 @@ kid=$(head -1 "$dir/real.pub" | awk '{print $NF}')
 minisign -S -s "$dir/real.key" -m "$bundle" -x "$bundle.minisig" -t "secwatch schema=1 key_id=$kid file=$file" >/dev/null
 set +e
 docker run --rm -v "$BIN:/usr/local/bin/secwatch:ro" -v "$dir:/data:ro" debian:12 \
-  sh -c "apt-get update >/dev/null 2>&1; secwatch scan --offline --bundle /data/$file --pubkey /data/real.pub --no-cache --format json" > "$dir/report.json"
+  sh -c "apt-get update >/dev/null 2>&1; secwatch scan --offline --bundle /data/$file --pubkey /data/real.pub --no-cache --format json" > "$dir/report.json" 2> "$dir/stderr.txt"
 code=$?
 set -e
 echo "::endgroup::"
 if msg=$(python3 "$HERE/assert.py" "$dir/report.json" "$code" CONFIRMED_AFFECTED glibc 2>&1); then
   echo "::notice title=minisign-interop::ok"
 else
-  echo "::error title=minisign-interop::$(echo "$msg" | tr '\n' ' ' | cut -c1-900)"
+  echo "::error title=minisign-interop::$(echo "$msg" | tr '\n' ' ' | cut -c1-500) | stderr: $(tr '\n' ' ' < "$dir/stderr.txt" | cut -c1-400) | sig: $(head -c 300 "$bundle.minisig" | tr '\n' ' ')"
   FAILED=1
 fi
 

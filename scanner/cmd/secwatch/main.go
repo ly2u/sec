@@ -1,0 +1,209 @@
+// Command secwatch is the LY2U SecWatch read-only vulnerability self-check.
+//
+// It never modifies the system, never uploads anything and never executes
+// remediation commands; it only prints them.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/jedisct1/go-minisign"
+
+	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/procinfo"
+	"github.com/ly2u/sec/scanner/internal/report"
+	"github.com/ly2u/sec/scanner/internal/system"
+)
+
+// Version is set at build time with -ldflags "-X main.Version=...".
+var Version = "dev"
+
+// Exit codes, stable for scripts and cron jobs.
+const (
+	exitOK        = 0 // nothing needs urgent action
+	exitError     = 1 // the scan could not complete
+	exitUsage     = 2
+	exitImportant = 3 // P0 or P1 findings exist
+)
+
+const usage = `用法：
+  secwatch scan [选项]     只读扫描本机漏洞
+  secwatch version         显示版本
+
+scan 选项：
+  --format table|json      输出格式（默认 table）
+  --all                    显示全部结果（包括低优先级与已截断的列表）
+  --offline                不联网，使用 --bundle 指定的数据包
+  --bundle FILE            离线数据包（*.json.zst），签名默认为 FILE.minisig
+  --signature FILE         离线数据包的签名文件
+  --bundle-url URL         自建数据源地址（必须 https）
+  --pubkey FILE            信任指定的公钥（替代内置公钥，用于自建数据源）
+  --root DIR               扫描挂载在 DIR 的文件系统（不检查进程与内核）
+  --no-exec                不调用任何外部程序（RPM 系统需要调用 rpm，无法使用）
+  --no-cache               不读写本地缓存（~/.cache/secwatch）
+
+退出码：0 无紧急问题 · 3 存在 P0/P1 问题 · 1 扫描失败 · 2 参数错误
+`
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(exitUsage)
+	}
+	switch os.Args[1] {
+	case "scan":
+		os.Exit(scan(os.Args[2:], os.Stdout, os.Stderr))
+	case "version", "--version", "-v":
+		fmt.Println("secwatch", Version)
+	case "help", "--help", "-h":
+		fmt.Print(usage)
+	default:
+		fmt.Fprint(os.Stderr, usage)
+		os.Exit(exitUsage)
+	}
+}
+
+func scan(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	format := fs.String("format", "table", "")
+	all := fs.Bool("all", false, "")
+	offline := fs.Bool("offline", false, "")
+	bundlePath := fs.String("bundle", "", "")
+	sigPath := fs.String("signature", "", "")
+	baseURL := fs.String("bundle-url", bundle.DefaultBaseURL, "")
+	pubkey := fs.String("pubkey", "", "")
+	root := fs.String("root", "/", "")
+	noExec := fs.Bool("no-exec", false, "")
+	noCache := fs.Bool("no-cache", false, "")
+	fs.Usage = func() { fmt.Fprint(stderr, usage) }
+	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+	if *format != "table" && *format != "json" {
+		fmt.Fprintln(stderr, "--format 只能是 table 或 json")
+		return exitUsage
+	}
+	if *offline && *bundlePath == "" {
+		fmt.Fprintln(stderr, "--offline 需要同时指定 --bundle")
+		return exitUsage
+	}
+
+	fail := func(msg string, err error) int {
+		fmt.Fprintf(stderr, "secwatch: %s：%v\n", msg, err)
+		return exitError
+	}
+
+	keys, err := trustedKeys(*pubkey)
+	if err != nil {
+		return fail("加载公钥失败", err)
+	}
+	host := system.Host{Root: *root, NoExec: *noExec}
+	osInfo, err := system.DetectOS(host)
+	if err != nil {
+		return fail("无法识别操作系统", err)
+	}
+	if !osInfo.Supported {
+		return fail("暂不支持该系统", fmt.Errorf("%s %s（支持 Debian 11–13、Ubuntu 20.04/22.04/24.04、Rocky/Alma 8–9、Alpine 3.22–3.24）", osInfo.ID, osInfo.VersionID))
+	}
+
+	var notes []string
+	if host.Live() && os.Geteuid() != 0 {
+		notes = append(notes, "未以 root 运行：其他用户的进程无法检查，补丁生效状态与暴露面可能不完整。")
+	}
+
+	var res *bundle.Result
+	if *bundlePath != "" {
+		res, err = loadOffline(*bundlePath, *sigPath, osInfo, keys)
+	} else {
+		src := &bundle.Source{BaseURL: *baseURL, Keys: keys, Version: Version}
+		if !*noCache {
+			src.CacheDir = cacheDir()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		res, err = src.Fetch(ctx, osInfo.Distro, osInfo.Release)
+	}
+	if err != nil {
+		return fail("获取漏洞数据失败", err)
+	}
+	notes = append(notes, res.Warnings...)
+
+	inv, err := system.ReadPackages(host, osInfo)
+	if err != nil {
+		return fail("读取已安装软件包失败", err)
+	}
+	rt := procinfo.Collect(host, osInfo, inv)
+	result := match.Evaluate(match.Input{
+		OS: osInfo, Inventory: inv, Bundle: res.Bundle, RunningKernel: rt.RunningKernel,
+	})
+	rep := report.Build(Version, osInfo, inv, result, rt, report.DataInfo{
+		File: res.File, GeneratedAt: res.Bundle.GeneratedAt, KeyID: res.KeyID, FromCache: res.FromCache,
+		Offline: *bundlePath != "",
+	}, notes, *all)
+
+	if *format == "json" {
+		if err := rep.WriteJSON(stdout); err != nil {
+			return fail("输出失败", err)
+		}
+	} else {
+		rep.WriteText(stdout)
+	}
+	if rep.Summary.ByPriority["P0"]+rep.Summary.ByPriority["P1"] > 0 {
+		return exitImportant
+	}
+	return exitOK
+}
+
+func trustedKeys(path string) (map[string]minisign.PublicKey, error) {
+	if path == "" {
+		return bundle.TrustedKeys()
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	pk, err := bundle.ParsePublicKey(raw)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]minisign.PublicKey{bundle.KeyID(pk): pk}, nil
+}
+
+func loadOffline(path, sig string, o system.OS, keys map[string]minisign.PublicKey) (*bundle.Result, error) {
+	if sig == "" {
+		sig = path + ".minisig"
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > bundle.MaxCompressedBytes {
+		return nil, errors.New("数据包超过大小上限")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	sigData, err := os.ReadFile(sig)
+	if err != nil {
+		return nil, fmt.Errorf("读取签名：%w", err)
+	}
+	return bundle.Load(data, sigData, filepath.Base(path), o.Distro, o.Release, keys)
+}
+
+func cacheDir() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "secwatch")
+}

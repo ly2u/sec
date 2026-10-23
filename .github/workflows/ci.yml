@@ -16,3 +16,30 @@ jobs:
       - run: pip install --no-deps --no-build-isolation -e .
       - run: ruff check . && ruff format --check .
       - run: pytest -q
+  scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: scanner/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+      # Verifies every module against sum.golang.org, then the local cache against go.sum.
+      - name: Verify dependencies
+        working-directory: scanner
+        run: go mod download && go mod verify
+      - name: Format, vet, unit tests
+        working-directory: scanner
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./...
+      - name: Build static binary
+        working-directory: scanner
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=ci-${GITHUB_SHA::7}" -o ../dist/secwatch ./cmd/secwatch
+          go build -o ../dist/mkbundle ./internal/tools/mkbundle
+          ../dist/secwatch version
+      - name: Real-distro container tests
+        run: scanner/testdata/integration/run.sh dist/secwatch dist/mkbundle

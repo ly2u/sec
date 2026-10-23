@@ -106,37 +106,95 @@ def _github_events(value):
     return events
 
 
-def cve_ranges(versions, default_status="unaffected"):
+# Older records describe ranges in prose. Only these unambiguous forms are read.
+_V = r"v?([0-9][0-9A-Za-z.~_+-]*)"
+TEXT_FORMS = [
+    # "8.0.34 and prior", "2.4.48 and earlier", "1.1.1k or before"
+    (
+        re.compile(
+            _V + r"\s+(?:and|or)\s+(?:prior|earlier|before|below|older|lower)(?:\s+versions?)?",
+            re.I,
+        ),
+        "last_affected",
+    ),
+    # "before 2.4.49", "prior to 8.0.35", "versions before 3.0.7", "earlier than 1.2"
+    (
+        re.compile(
+            r"(?:all\s+)?(?:versions?\s+)?(?:before|prior\s+to|earlier\s+than|lower\s+than|below)\s+"
+            + _V,
+            re.I,
+        ),
+        "fixed",
+    ),
+    # "through 3.0.7", "up to and including 8.0.34", "up to 1.2.3"
+    (
+        re.compile(r"(?:versions?\s+)?(?:through|up\s+to(?:\s+and\s+including)?)\s+" + _V, re.I),
+        "last_affected",
+    ),
+]
+TEXT_SPAN = re.compile(_V + r"\s+(?:-|to|through)\s+" + _V, re.I)
+
+
+def _text_events(value):
+    """Events for a prose range ("8.0.34 and prior", "2.4.0 - 2.4.48"), or None."""
+    span = TEXT_SPAN.fullmatch(value)
+    if span:
+        low, high = clean(span.group(1)), clean(span.group(2))
+        return [{"introduced": low}, {"last_affected": high}] if low and high else None
+    for pattern, kind in TEXT_FORMS:
+        match = pattern.fullmatch(value)
+        if match:
+            version = clean(match.group(1))
+            return [{"introduced": "0"}, {kind: version}] if version else None
+    return None
+
+
+def cve_ranges(versions, default_status="unaffected", unparsed=None):
     """Convert CVE 5 ``versions`` to OSV-style ranges.
 
     Returns (ranges, skipped) where skipped counts entries that were ambiguous.
     Each affected entry becomes its own range so branches never interact.
+    If ``unparsed`` is a list, the raw version strings that were skipped are
+    appended to it (used by the coverage diagnostics).
     """
     ranges, skipped = [], 0
+
+    def skip(item):
+        nonlocal skipped
+        skipped += 1
+        if unparsed is not None:
+            unparsed.append((item.get("version") or "").strip()[:80])
+
     if (default_status or "unaffected").lower() == "affected":
         # "Everything is affected except ..." cannot be expressed safely.
+        if unparsed is not None:
+            unparsed.append("<defaultStatus: affected>")
         return [], len(versions or []) or 1
     for item in versions or []:
         if (item.get("status") or "").lower() != "affected":
             continue
         if (item.get("versionType") or "").lower() == "git":
-            skipped += 1
+            skip(item)
             continue
         raw = (item.get("version") or "").strip()
-        if (
-            re.search(r"[<>=]", raw)
-            and not item.get("lessThan")
-            and not item.get("lessThanOrEqual")
-        ):
+        bounded = item.get("lessThan") or item.get("lessThanOrEqual")
+        if not bounded and re.search(r"[<>=]", raw):
             events = _github_events(raw)
             if events is None:
-                skipped += 1
+                skip(item)
+            else:
+                ranges.append({"type": "UPSTREAM", "events": events})
+            continue
+        if not bounded and re.search(r"\s", raw):
+            events = _text_events(raw)
+            if events is None:
+                skip(item)
             else:
                 ranges.append({"type": "UPSTREAM", "events": events})
             continue
         start, branch_end = _start(item.get("version"))
         if start is None:
-            skipped += 1
+            skip(item)
             continue
         less = (item.get("lessThan") or "").strip()
         less_eq = (item.get("lessThanOrEqual") or "").strip()
@@ -147,7 +205,7 @@ def cve_ranges(versions, default_status="unaffected"):
             elif clean(less):
                 events.append({"fixed": clean(less)})
             else:
-                skipped += 1
+                skip(item)
                 continue
         elif less_eq:
             if less_eq == "*":
@@ -155,17 +213,45 @@ def cve_ranges(versions, default_status="unaffected"):
             elif clean(less_eq):
                 events.append({"last_affected": clean(less_eq)})
             else:
-                skipped += 1
+                skip(item)
                 continue
         elif branch_end:
             events.append({"limit": branch_end})
         elif start == "0":
-            skipped += 1  # "all versions" with no bound says nothing useful
+            skip(item)  # "all versions" with no bound says nothing useful
             continue
         else:
             events.append({"last_affected": start})  # a single exact version
         ranges.append({"type": "UPSTREAM", "events": events})
-    return _cap_open_ranges(ranges), skipped
+    return _cap_open_ranges(_branch_starts(ranges)), skipped
+
+
+def _bound(rng):
+    for event in rng["events"][1:]:
+        for kind in ("fixed", "last_affected"):
+            if kind in event:
+                return event[kind]
+    return None
+
+
+def _branch_starts(ranges):
+    """Give per-branch lists a lower bound.
+
+    Older records list one bound per branch with no start, e.g. PHP's
+    "before 7.4.33 | before 8.0.25 | before 8.1.12". Read literally, "before
+    8.1.12" would also cover the already-fixed 8.0.30. Every such range except
+    the lowest therefore starts at its own branch (8.1.12 -> 8.1.0).
+    """
+    open_start = [r for r in ranges if r["events"][0].get("introduced") == "0" and _bound(r)]
+    if len(open_start) < 2:
+        return ranges
+    open_start.sort(key=lambda r: _key(_bound(r)))
+    for lower, rng in zip(open_start, open_start[1:], strict=False):
+        parts = re.findall(r"[0-9]+", _bound(rng))
+        lower_parts = re.findall(r"[0-9]+", _bound(lower))
+        if len(parts) >= 2 and parts[:2] != lower_parts[:2]:
+            rng["events"][0] = {"introduced": f"{parts[0]}.{parts[1]}.0"}
+    return ranges
 
 
 def _key(version):
@@ -268,6 +354,64 @@ def backfill(engine, batch=1000):
             matched += sum(len(cve_rows(raw)) for raw in raws)
             total += len(records)
             last = records[-1].id
+
+
+def coverage(engine, batch=2000, top=15):
+    """Per product: CVEs naming it, CVEs converted, and the commonest version
+    strings that could not be read. Read-only; for improving the converter."""
+    from collections import Counter
+
+    ids = identities()
+    stats = {}
+    last = ""
+    while True:
+        with Session(engine) as session:
+            records = session.execute(
+                select(Vulnerability.id, Vulnerability.raw_record)
+                .where(
+                    Vulnerability.id > last,
+                    Vulnerability.status == "PUBLISHED",
+                    Vulnerability.raw_record.is_not(None),
+                )
+                .order_by(Vulnerability.id)
+                .limit(batch)
+            ).all()
+        if not records:
+            break
+        last = records[-1].id
+        for rec in records:
+            cna = rec.raw_record.get("containers", {}).get("cna", {})
+            seen = {}
+            for affected in cna.get("affected", []) or []:
+                key = (
+                    (affected.get("vendor") or "").strip().lower(),
+                    (affected.get("product") or "").strip().lower(),
+                )
+                slug = ids.get(key)
+                if not slug:
+                    continue
+                unparsed = []
+                ranges, _ = cve_ranges(
+                    affected.get("versions"), affected.get("defaultStatus"), unparsed
+                )
+                s = stats.setdefault(
+                    slug, {"cves": set(), "converted": set(), "unparsed": Counter()}
+                )
+                s["cves"].add(rec.id)
+                if ranges:
+                    s["converted"].add(rec.id)
+                seen.setdefault(slug, []).extend(unparsed)
+            for slug, strings in seen.items():
+                if rec.id not in stats[slug]["converted"]:
+                    stats[slug]["unparsed"].update(strings or ["<no affected versions>"])
+    return {
+        slug: {
+            "cves": len(s["cves"]),
+            "converted": len(s["converted"]),
+            "top_unparsed": s["unparsed"].most_common(top),
+        }
+        for slug, s in sorted(stats.items())
+    }
 
 
 # ---------------------------------------------------------------- Node.js semver

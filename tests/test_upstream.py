@@ -15,7 +15,7 @@ from collector.adapters.cvelist import apply_records
 from collector.adapters.nodejs import ARCHIVE, NodejsAdapter, entry_row
 from collector.bundles import generate, run_minisign
 from collector.http import FeedHTTP
-from collector.upstream import backfill, cve_ranges, cve_rows, node_ranges
+from collector.upstream import backfill, coverage, cve_ranges, cve_rows, node_ranges
 
 FIXTURES = Path(__file__).parent / "fixtures" / "upstream"
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,6 +145,60 @@ def test_invalid_upstream_row_is_skipped_not_fatal(db, tmp_path, signing):
     )
     assert "php" not in payload["source_packages"]
     assert "debian-12" in manifest["bundles"], "other bundles are still published"
+
+
+def test_prose_ranges_from_older_records():
+    def events(version):
+        ranges, skipped = cve_ranges([{"status": "affected", "version": version}])
+        return ranges[0]["events"] if ranges else None
+
+    # Oracle's per-branch style: "5.7.43 and prior", "8.0.34 and prior".
+    assert events("8.0.34 and prior") == [{"introduced": "0"}, {"last_affected": "8.0.34"}]
+    assert events("2.4.48 and earlier") == [{"introduced": "0"}, {"last_affected": "2.4.48"}]
+    assert events("before 2.4.49") == [{"introduced": "0"}, {"fixed": "2.4.49"}]
+    assert events("versions prior to 8.0.35") == [{"introduced": "0"}, {"fixed": "8.0.35"}]
+    assert events("through 3.0.7") == [{"introduced": "0"}, {"last_affected": "3.0.7"}]
+    assert events("2.4.0 - 2.4.48") == [{"introduced": "2.4.0"}, {"last_affected": "2.4.48"}]
+    assert events("2.4.0 to 2.4.48") == [{"introduced": "2.4.0"}, {"last_affected": "2.4.48"}]
+    # Anything else stays unread rather than guessed.
+    assert events("all supported versions") is None
+    assert events("see advisory") is None
+
+
+def test_per_branch_lists_do_not_overlap():
+    versions = [
+        {"status": "affected", "version": "before 7.4.33"},
+        {"status": "affected", "version": "before 8.0.25"},
+        {"status": "affected", "version": "before 8.1.12"},
+    ]
+    ranges, _ = cve_ranges(versions)
+    assert [r["events"] for r in ranges] == [
+        [{"introduced": "0"}, {"fixed": "7.4.33"}],
+        [{"introduced": "8.0.0"}, {"fixed": "8.0.25"}],
+        [{"introduced": "8.1.0"}, {"fixed": "8.1.12"}],
+    ]
+    # Oracle style.
+    oracle = [
+        {"status": "affected", "version": "8.0.39 and prior"},
+        {"status": "affected", "version": "8.4.2 and prior"},
+    ]
+    assert cve_ranges(oracle)[0][1]["events"] == [
+        {"introduced": "8.4.0"},
+        {"last_affected": "8.4.2"},
+    ]
+
+
+def test_coverage_reports_unread_strings(db):
+    odd = {
+        "vendor": "PHP Group",
+        "product": "PHP",
+        "versions": [{"status": "affected", "version": "see notes"}],
+    }
+    with Session(db) as session, session.begin():
+        apply_records(session, [record("CVE-2026-109618", PHP), record("CVE-2026-3", odd)])
+    report = coverage(db, batch=1)
+    assert report["php"]["cves"] == 2 and report["php"]["converted"] == 1
+    assert report["php"]["top_unparsed"] == [("see notes", 1)]
 
 
 def test_ambiguous_entries_are_skipped_not_guessed():

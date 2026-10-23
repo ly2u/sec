@@ -18,6 +18,16 @@ import (
 // WriteBundle writes key.pub, the bundle and its .minisig into out, signed
 // with a fresh throwaway key, and returns the bundle path.
 func WriteBundle(distro, release, key string, pkgs map[string][]bundle.Entry, out string) (string, error) {
+	s, err := testutil.NewSigner()
+	if err != nil {
+		return "", err
+	}
+	return WriteBundleSigned(s, distro, release, key, pkgs, out)
+}
+
+// WriteBundleSigned is WriteBundle with a caller-provided key, so several
+// bundles can share one trusted key.
+func WriteBundleSigned(s *testutil.Signer, distro, release, key string, pkgs map[string][]bundle.Entry, out string) (string, error) {
 	payload, err := json.Marshal(bundle.Bundle{
 		Schema: 1, Distro: distro, Release: release, PackageKey: key,
 		GeneratedAt: time.Now().UTC(), SourcePackages: pkgs, Sources: map[string]string{"test": "1"},
@@ -38,10 +48,6 @@ func WriteBundle(distro, release, key string, pkgs map[string][]bundle.Entry, ou
 		return "", err
 	}
 	data := buf.Bytes()
-	s, err := testutil.NewSigner()
-	if err != nil {
-		return "", err
-	}
 	name := fmt.Sprintf("%s-%s.%s.json.zst", distro, release, bundle.SHA256Hex(data)[:12])
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return "", err

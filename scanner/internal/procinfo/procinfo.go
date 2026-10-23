@@ -38,6 +38,7 @@ type Listener struct {
 	Port     int      `json:"port"`
 	Public   bool     `json:"public"`
 	Process  string   `json:"process,omitempty"`
+	Exe      string   `json:"exe,omitempty"`
 	Unit     string   `json:"unit,omitempty"`
 	PID      int      `json:"pid,omitempty"`
 	Packages []string `json:"packages,omitempty"` // source packages loaded by the process
@@ -150,7 +151,8 @@ func Collect(h system.Host, o system.OS, inv *system.Inventory) *Report {
 			l.PID, l.Process, l.Unit = pid, comm(base), unitOf(base)
 			files := mappedFiles(base)
 			if exe, err := os.Readlink(filepath.Join(base, "exe")); err == nil {
-				files = append(files, strings.TrimSuffix(exe, " (deleted)"))
+				l.Exe = strings.TrimSuffix(exe, " (deleted)")
+				files = append(files, l.Exe)
 			}
 			l.Packages = owners.sources(files, binToSource)
 			if l.Public {

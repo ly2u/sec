@@ -62,6 +62,48 @@ check rocky9          rockylinux/rockylinux:9 rocky 9 source glibc "99:1-1" "0:0
 check alma9           almalinux:9 alma 9 binary glibc "99:1-1" "0:0.1-1" CONFIRMED_AFFECTED
 check alpine322       alpine:3.22 alpine 3.22 origin musl "999.0-r0" "0.1-r0" CONFIRMED_AFFECTED
 
+# L2, live: fake BaoTa nginx (with OpenSSL compiled in) and PHP owned by root,
+# and a redis-server owned by an unprivileged user that must never be executed.
+echo "::group::l2 live (debian:12)"
+dir="$WORK/l2"
+mkdir -p "$dir/out"
+echo '{}' > "$dir/distro.json"
+cat > "$dir/upstream.json" <<'JSON'
+{
+ "nginx": [{"id":"CVE-2026-95101","cve_ids":["CVE-2026-95101"],"status":"fixed","cvss":8.2,
+   "ranges":[{"type":"UPSTREAM","events":[{"introduced":"1.31.0"},{"fixed":"1.31.7"}]},
+             {"type":"UPSTREAM","events":[{"introduced":"1.30.0"},{"fixed":"1.30.6"}]},
+             {"type":"UPSTREAM","events":[{"introduced":"1.25.0"},{"limit":"1.30.0"}]}],"ref":"https://example.invalid/n"}],
+ "openssl": [{"id":"CVE-2026-0101","cve_ids":["CVE-2026-0101"],"status":"fixed","cvss":7.5,
+   "ranges":[{"type":"UPSTREAM","events":[{"introduced":"1.1.1"},{"limit":"3.0.0"}]},
+             {"type":"UPSTREAM","events":[{"introduced":"3.0.0"},{"fixed":"3.0.18"}]}],"ref":"https://example.invalid/o"}],
+ "php": [{"id":"CVE-2026-109618","cve_ids":["CVE-2026-109618"],"status":"fixed","cvss":9.2,
+   "ranges":[{"type":"UPSTREAM","events":[{"introduced":"8.3.0"},{"fixed":"8.3.36"}]}],"ref":"https://example.invalid/p"}]
+}
+JSON
+mapfile -t bundles < <("$MK" -distro debian -release 12 -in "$dir/distro.json" -upstream-in "$dir/upstream.json" -out "$dir")
+prep='set -e
+mkdir -p /www/server/nginx/sbin /www/server/php/83/bin /usr/local/redis/bin
+printf "#!/bin/sh\necho \"nginx version: nginx/1.28.0\" >&2\necho \"built with OpenSSL 1.1.1w  11 Sep 2023\" >&2\n" > /www/server/nginx/sbin/nginx
+printf "#!/bin/sh\necho \"PHP 8.3.10 (cli) (NTS)\"\n" > /www/server/php/83/bin/php
+printf "#!/bin/sh\ntouch /out/EXECUTED\necho \"Redis server v=7.0.0\"\n" > /usr/local/redis/bin/redis-server
+chmod 755 /www/server/nginx/sbin/nginx /www/server/php/83/bin/php /usr/local/redis/bin/redis-server
+chown nobody /usr/local/redis/bin/redis-server'
+set +e
+docker run --rm -v "$BIN:/usr/local/bin/secwatch:ro" -v "$dir:/data:ro" -v "$dir/out:/out" debian:12 sh -c "$prep
+secwatch scan --offline --bundle /data/$(basename "${bundles[0]}") --upstream-bundle /data/$(basename "${bundles[1]}") --pubkey /data/key.pub --no-cache --format json > /out/report.json
+secwatch scan --offline --bundle /data/$(basename "${bundles[0]}") --upstream-bundle /data/$(basename "${bundles[1]}") --pubkey /data/key.pub --no-cache"
+set -e
+echo "::endgroup::"
+executed=no
+[ -e "$dir/out/EXECUTED" ] && executed=yes
+if msg=$(python3 "$HERE/assert_l2.py" "$dir/out/report.json" "$executed" 2>&1); then
+  echo "::notice title=l2-live::ok"
+else
+  echo "::error title=l2-live::$(echo "$msg" | tr '\n' ' ' | cut -c1-900)"
+  FAILED=1
+fi
+
 # Interoperability: a bundle signed by the real minisign CLI (as the server does).
 echo "::group::minisign interop"
 dir="$WORK/interop"

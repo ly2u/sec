@@ -7,7 +7,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/version"
 )
 
 var priorityLabel = map[string]string{
@@ -25,6 +27,7 @@ type pkgGroup struct {
 	exposed   bool
 	kev       bool
 	maxCVSS   float64
+	l2        bool
 }
 
 func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
@@ -34,10 +37,10 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 		if !filter(f) {
 			continue
 		}
-		k := f.Package + "\x00" + f.InstalledVersion
+		k := f.Package + "\x00" + f.InstalledVersion + "\x00" + f.Layer + "\x00" + f.Path
 		g := by[k]
 		if g == nil {
-			g = &pkgGroup{pkg: f.Package, installed: f.InstalledVersion, binaries: f.Binaries, priority: "P9", maxCVSS: -1}
+			g = &pkgGroup{pkg: f.Package, installed: f.InstalledVersion, binaries: f.Binaries, priority: "P9", maxCVSS: -1, l2: f.Layer == "L2"}
 			by[k] = g
 			order = append(order, k)
 		}
@@ -51,7 +54,7 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 			g.maxCVSS = *f.CVSS
 		}
 		if f.FixedVersion != "" && (f.Fix == match.FixUpgrade || f.Fix == match.FixReboot || f.Fix == match.FixSubscription) {
-			if g.target == "" || r.cmp(f.FixedVersion, g.target) > 0 {
+			if g.target == "" || r.cmpFor(g.l2, f.FixedVersion, g.target) > 0 {
 				g.target = f.FixedVersion
 			}
 		}
@@ -72,8 +75,12 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 	return out
 }
 
-func (r *Report) cmp(a, b string) int {
-	c, err := compareVersions(r.kind, a, b)
+func (r *Report) cmpFor(upstream bool, a, b string) int {
+	kind := r.kind
+	if upstream {
+		kind = version.Upstream
+	}
+	c, err := compareVersions(kind, a, b)
 	if err != nil {
 		return strings.Compare(a, b)
 	}
@@ -224,6 +231,30 @@ func (r *Report) WriteText(out io.Writer) {
 			if b := badges(g); b != "" {
 				fmt.Fprintf(w, "  风险：%s\n", b)
 			}
+			if g.l2 {
+				f := g.findings[0]
+				label := l2.MethodLabel[f.Method]
+				if f.Path != "" {
+					fmt.Fprintf(w, "  位置：%s（%s）\n", f.Path, label)
+				} else {
+					fmt.Fprintf(w, "  来源：%s（%s）\n", strings.Join(f.Binaries, " "), label)
+				}
+				if f.Method == "package" {
+					if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
+						fmt.Fprintf(w, "  修复：%s（从原第三方软件源升级）\n", r.upgradeCommand(pkgs))
+						upgradeAll = append(upgradeAll, pkgs...)
+					}
+				} else if f.Guidance != "" {
+					fmt.Fprintf(w, "  修复：%s\n", f.Guidance)
+				}
+				if g.exposed {
+					fmt.Fprintf(w, "  注意：该程序正在对外提供服务，升级后需重启才会生效\n")
+				}
+				for _, ref := range refsOf(g, 2) {
+					fmt.Fprintf(w, "  参考：%s\n", ref)
+				}
+				continue
+			}
 			bins, bad := safeNames(g.binaries)
 			reboot := false
 			for _, f := range g.findings {
@@ -357,10 +388,58 @@ func (r *Report) WriteText(out io.Writer) {
 		}
 	}
 
+	if r.L2 != nil && (len(r.L2.Installs) > 0 || len(r.L2.Containers) > 0) {
+		section(w, "非包管理安装的软件")
+		if !r.L2Evaluated {
+			fmt.Fprintln(w, "  （未获取上游漏洞数据，以下软件只列出、未判定漏洞）")
+		}
+		for _, in := range r.L2.Installs {
+			name := in.ProductName
+			if in.Version != "" {
+				name += " " + in.Version
+			}
+			where := in.Path
+			if where == "" {
+				where = strings.Join(in.Packages, " ")
+			}
+			label := l2.MethodLabel[in.Method]
+			if in.OriginLabel != "" && in.Method == "package" {
+				label += "：" + in.OriginLabel
+			}
+			line := fmt.Sprintf("  · %s  %s（%s）", name, where, label)
+			if in.BundledIn != "" {
+				line = fmt.Sprintf("  · %s  编译在 %s 中（%s）", name, in.BundledIn, in.Path)
+			}
+			if in.Running {
+				line += " · 运行中"
+			}
+			fmt.Fprintln(w, line)
+			if in.Note != "" {
+				fmt.Fprintf(w, "      %s\n", in.Note)
+			}
+		}
+		if len(r.L2NoData) > 0 {
+			fmt.Fprintf(w, "  暂无上游漏洞数据：%s（结论为未知）\n", strings.Join(r.L2NoData, "、"))
+		}
+		if len(r.L2.Containers) > 0 {
+			var parts []string
+			for _, c := range r.L2.Containers {
+				p := c.Name
+				if c.Container != "" {
+					p += "（容器 " + c.Container + "）"
+				} else {
+					p += fmt.Sprintf("（PID %d）", c.PID)
+				}
+				parts = append(parts, p)
+			}
+			fmt.Fprintf(w, "  容器内运行：%s。容器内部的软件版本本工具暂不检查，建议用 trivy image 扫描对应镜像，或确认镜像已重新构建。\n", strings.Join(parts, "、"))
+		}
+	}
+
 	if len(r.ThirdParty) > 0 {
 		section(w, "未覆盖：来自第三方源的软件包")
 		fmt.Fprintln(w, "  这些软件包不是由发行版官方仓库提供的，发行版漏洞数据不适用于它们，本次结论为“未知”。")
-		fmt.Fprintln(w, "  其中 nginx、PHP、Node.js 等常见软件的上游版本检测将在后续版本提供；在此之前请关注对应软件的官方安全公告。")
+		fmt.Fprintln(w, "  请关注这些软件的官方安全公告；SecWatch 已支持的软件（nginx、PHP、Node.js、Docker 等）会自动按上游版本判断，不在此列。")
 		limit := 30
 		if r.showAll {
 			limit = len(r.ThirdParty)

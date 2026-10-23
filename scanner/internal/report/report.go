@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
 	"github.com/ly2u/sec/scanner/internal/system"
@@ -30,16 +31,20 @@ const (
 
 // Report is the complete scan outcome.
 type Report struct {
-	Schema        int                  `json:"schema"`
-	Scanner       string               `json:"scanner_version"`
-	ScannedAt     time.Time            `json:"scanned_at"`
-	OS            OSInfo               `json:"os"`
-	Data          DataInfo             `json:"data"`
-	Summary       Summary              `json:"summary"`
-	Findings      []match.Finding      `json:"findings"`
-	Kernel        match.KernelState    `json:"kernel"`
-	Runtime       *procinfo.Report     `json:"runtime"`
-	ThirdParty    []system.Package     `json:"third_party_packages"`
+	Schema     int               `json:"schema"`
+	Scanner    string            `json:"scanner_version"`
+	ScannedAt  time.Time         `json:"scanned_at"`
+	OS         OSInfo            `json:"os"`
+	Data       DataInfo          `json:"data"`
+	Summary    Summary           `json:"summary"`
+	Findings   []match.Finding   `json:"findings"`
+	Kernel     match.KernelState `json:"kernel"`
+	Runtime    *procinfo.Report  `json:"runtime"`
+	ThirdParty []system.Package  `json:"third_party_packages"`
+	// L2: software installed outside the distribution's package manager.
+	L2            *l2.Result           `json:"l2"`
+	L2Evaluated   bool                 `json:"l2_evaluated"`
+	L2NoData      []string             `json:"l2_products_without_data,omitempty"`
 	Notes         []string             `json:"notes"`
 	Commands      map[string][]Command `json:"-"`
 	kind          version.Kind
@@ -116,12 +121,42 @@ func Priority(f match.Finding, exposed bool) string {
 }
 
 // Build assembles the report.
-func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result, rt *procinfo.Report, data DataInfo, notes []string, showAll bool) *Report {
+func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result, rt *procinfo.Report, data DataInfo, notes []string, showAll bool, found *l2.Result, outcome *l2.Outcome) *Report {
 	r := &Report{
 		Schema: SchemaVersion, Scanner: scanner, ScannedAt: time.Now().UTC(),
 		OS:   OSInfo{Name: o.PrettyName, Distro: o.Distro, Release: o.Release},
 		Data: data, Kernel: res.Kernel, Runtime: rt, ThirdParty: res.ThirdParty,
 		kind: o.Kind, distro: o.Distro, showAll: showAll, stalePackages: map[string]bool{},
+	}
+	if found != nil {
+		r.L2 = found
+		r.Notes = append(r.Notes, found.Notes...)
+	}
+	if outcome != nil {
+		r.L2Evaluated = true
+		r.L2NoData = outcome.NoData
+		res.Findings = append(append([]match.Finding{}, res.Findings...), outcome.Findings...)
+		res.FixedCount += outcome.AlreadyFixed
+		// Third-party packages that L2 actually evaluated are no longer "unknown".
+		covered := map[string]bool{}
+		noData := map[string]bool{}
+		for _, n := range outcome.NoData {
+			noData[n] = true
+		}
+		for _, in := range found.Installs {
+			if in.Version != "" && !noData[in.ProductName] {
+				for _, p := range in.Packages {
+					covered[p] = true
+				}
+			}
+		}
+		var remaining []system.Package
+		for _, p := range r.ThirdParty {
+			if !covered[p.Name] {
+				remaining = append(remaining, p)
+			}
+		}
+		r.ThirdParty = remaining
 	}
 	if r.ThirdParty == nil {
 		r.ThirdParty = []system.Package{}
@@ -172,7 +207,7 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 	})
 	s := Summary{
 		Packages: res.PackagesScanned, Sources: res.SourcesEvaluated, AlreadyFixed: res.FixedCount,
-		ByPriority: map[string]int{}, ByStatus: map[string]int{}, ThirdParty: len(res.ThirdParty),
+		ByPriority: map[string]int{}, ByStatus: map[string]int{}, ThirdParty: len(r.ThirdParty),
 		MinorUnfixed: res.MinorUnfixed,
 	}
 	for _, f := range r.Findings {

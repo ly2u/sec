@@ -17,6 +17,7 @@ import (
 	"github.com/jedisct1/go-minisign"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
 	"github.com/ly2u/sec/scanner/internal/report"
@@ -44,6 +45,7 @@ scan 选项：
   --offline                不联网，使用 --bundle 指定的数据包
   --bundle FILE            离线数据包（*.json.zst），签名默认为 FILE.minisig
   --signature FILE         离线数据包的签名文件
+  --upstream-bundle FILE   离线上游软件数据包（upstream-1.*.json.zst），用于检测非包管理安装的软件
   --bundle-url URL         自建数据源地址（必须 https）
   --pubkey FILE            信任指定的公钥（替代内置公钥，用于自建数据源）
   --root DIR               扫描挂载在 DIR 的文件系统（不检查进程与内核）
@@ -79,6 +81,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	offline := fs.Bool("offline", false, "")
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
+	upstreamPath := fs.String("upstream-bundle", "", "")
 	baseURL := fs.String("bundle-url", bundle.DefaultBaseURL, "")
 	pubkey := fs.String("pubkey", "", "")
 	root := fs.String("root", "/", "")
@@ -120,9 +123,17 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		notes = append(notes, "未以 root 运行：其他用户的进程无法检查，补丁生效状态与暴露面可能不完整。")
 	}
 
-	var res *bundle.Result
+	var res, upstream *bundle.Result
 	if *bundlePath != "" {
-		res, err = loadOffline(*bundlePath, *sigPath, osInfo, keys)
+		res, err = loadOffline(*bundlePath, *sigPath, osInfo.Distro, osInfo.Release, keys)
+		if err == nil && *upstreamPath != "" {
+			var uerr error
+			if upstream, uerr = loadOffline(*upstreamPath, "", "upstream", "1", keys); uerr != nil {
+				return fail("上游数据包校验失败", uerr)
+			}
+		} else if err == nil {
+			notes = append(notes, "离线模式未提供上游数据包（--upstream-bundle），非包管理安装的软件只列出、不判定漏洞。")
+		}
 	} else {
 		src := &bundle.Source{BaseURL: *baseURL, Keys: keys, Version: Version}
 		if !*noCache {
@@ -131,11 +142,21 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		res, err = src.Fetch(ctx, osInfo.Distro, osInfo.Release)
+		if err == nil {
+			var uerr error
+			if upstream, uerr = src.Fetch(ctx, "upstream", "1"); uerr != nil {
+				upstream = nil
+				notes = append(notes, "上游软件数据获取失败（"+uerr.Error()+"），非包管理安装的软件只列出、不判定漏洞。")
+			}
+		}
 	}
 	if err != nil {
 		return fail("获取漏洞数据失败", err)
 	}
 	notes = append(notes, res.Warnings...)
+	if upstream != nil {
+		notes = append(notes, upstream.Warnings...)
+	}
 
 	inv, err := system.ReadPackages(host, osInfo)
 	if err != nil {
@@ -145,10 +166,23 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	result := match.Evaluate(match.Input{
 		OS: osInfo, Inventory: inv, Bundle: res.Bundle, RunningKernel: rt.RunningKernel,
 	})
+
+	rules, err := l2.LoadRules()
+	if err != nil {
+		return fail("内置产品规则无效", err)
+	}
+	owners := procinfo.NewOwners(host, osInfo, inv)
+	found := l2.Discover(l2.Env{Host: host, Inventory: inv, Owner: owners.Owner}, rules)
+	var outcome *l2.Outcome
+	if upstream != nil {
+		o := l2.Evaluate(found, upstream.Bundle, rules, exposedFn(rt))
+		outcome = &o
+	}
+
 	rep := report.Build(Version, osInfo, inv, result, rt, report.DataInfo{
 		File: res.File, GeneratedAt: res.Bundle.GeneratedAt, KeyID: res.KeyID, FromCache: res.FromCache,
 		Offline: *bundlePath != "",
-	}, notes, *all)
+	}, notes, *all, &found, outcome)
 
 	if *format == "json" {
 		if err := rep.WriteJSON(stdout); err != nil {
@@ -178,7 +212,31 @@ func trustedKeys(path string) (map[string]minisign.PublicKey, error) {
 	return map[string]minisign.PublicKey{bundle.KeyID(pk): pk}, nil
 }
 
-func loadOffline(path, sig string, o system.OS, keys map[string]minisign.PublicKey) (*bundle.Result, error) {
+// exposedFn reports whether an L2 install is served by a publicly listening process.
+func exposedFn(rt *procinfo.Report) func(l2.Install) bool {
+	return func(in l2.Install) bool {
+		for _, p := range in.Packages {
+			if rt.Exposed[p] {
+				return true
+			}
+		}
+		if in.Path == "" {
+			return false
+		}
+		real, err := filepath.EvalSymlinks(in.Path)
+		if err != nil {
+			real = in.Path
+		}
+		for _, l := range rt.Listeners {
+			if l.Public && (l.Exe == in.Path || l.Exe == real) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func loadOffline(path, sig, distro, release string, keys map[string]minisign.PublicKey) (*bundle.Result, error) {
 	if sig == "" {
 		sig = path + ".minisig"
 	}
@@ -197,7 +255,7 @@ func loadOffline(path, sig string, o system.OS, keys map[string]minisign.PublicK
 	if err != nil {
 		return nil, fmt.Errorf("读取签名：%w", err)
 	}
-	return bundle.Load(data, sigData, filepath.Base(path), o.Distro, o.Release, keys)
+	return bundle.Load(data, sigData, filepath.Base(path), distro, release, keys)
 }
 
 func cacheDir() string {

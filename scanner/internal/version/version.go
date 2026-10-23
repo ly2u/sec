@@ -5,6 +5,7 @@ package version
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -20,7 +21,12 @@ const (
 	Deb Kind = "deb"
 	RPM Kind = "rpm"
 	APK Kind = "apk"
+	// Upstream compares plain upstream release versions (1.24.0, 9.8p1,
+	// 1.1.1w, 24.22.1) segment by segment, using rpmvercmp's rules.
+	Upstream Kind = "upstream"
 )
+
+var upstreamVersion = regexp.MustCompile(`^[0-9][0-9A-Za-z.+~_]{0,63}$`)
 
 // Compare returns -1, 0 or 1. The OSV sentinel "0" (as in introduced: "0")
 // sorts before every real version.
@@ -64,6 +70,15 @@ func compare(kind Kind, a, b string) (int, error) {
 			return 0, fmt.Errorf("empty rpm version")
 		}
 		va, vb := rpm.NewVersion(a), rpm.NewVersion(b)
+		return va.Compare(vb), nil
+	case Upstream:
+		for _, v := range []string{a, b} {
+			if !upstreamVersion.MatchString(v) {
+				return 0, fmt.Errorf("invalid upstream version %q", v)
+			}
+		}
+		// No epoch and no release: compare the version string alone.
+		va, vb := rpm.NewVersion("0:"+a), rpm.NewVersion("0:"+b)
 		return va.Compare(vb), nil
 	case APK:
 		va, err := apk.NewVersion(a)

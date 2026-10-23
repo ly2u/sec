@@ -57,6 +57,13 @@ type Finding struct {
 	Priority         string        `json:"priority"`
 	DistroStatus     string        `json:"distro_status,omitempty"`
 	Urgency          string        `json:"urgency,omitempty"`
+	// Layer is "L1" (distro package) or "L2" (installed outside the package
+	// manager, or from a third-party repository).
+	Layer string `json:"layer"`
+	// L2 only: how it was installed, where, and how to upgrade it.
+	Method   string `json:"method,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Guidance string `json:"guidance,omitempty"`
 	// Minor: the distro rates this negligible (Debian "unimportant").
 	Minor bool `json:"minor,omitempty"`
 }
@@ -398,7 +405,7 @@ func evaluateVuln(in Input, g Group, key string, entries []bundle.Entry, ks Kern
 	}
 	f := Finding{
 		ID: key, Package: g.Key, Binaries: g.Binaries, InstalledVersion: g.Version,
-		Origin: g.Origin, Kernel: g.Kernel,
+		Origin: g.Origin, Kernel: g.Kernel, Layer: "L1",
 	}
 	enrich(&f, entries)
 
@@ -466,6 +473,12 @@ func proFinding(in Input, f Finding, g Group, pv channelVerdict) Finding {
 	}
 	return f
 }
+
+// VulnKey and Enrich let layer L2 group and annotate entries exactly like L1.
+func VulnKey(e bundle.Entry) string { return vulnKey(e) }
+
+// Enrich fills CVE ids, references, CVSS, EPSS and KEV from entries.
+func Enrich(f *Finding, entries []bundle.Entry) { enrich(f, entries) }
 
 func statusFor(o system.Origin) Status {
 	if o == system.Official {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/testutil"
 	"github.com/ly2u/sec/scanner/internal/testutil/fixture"
 	"github.com/ly2u/sec/scanner/internal/version"
 )
@@ -242,4 +243,58 @@ func TestAllShowsHiddenMinorIssues(t *testing.T) {
 	if !strings.Contains(b.String(), "评为可忽略") || !strings.Contains(b.String(), "CVE-2020-15778") {
 		t.Fatalf("--all must reveal it for auditing\n%s", b.String())
 	}
+}
+
+// L2 end to end on a mounted root (nothing is executed there): an nvm Node
+// hit by Node2Shell and Docker CE from Docker's own repository.
+func TestL2EndToEnd(t *testing.T) {
+	root, _, _ := debianHost(t)
+	put(t, root, "root/.nvm/versions/node/v24.22.0/bin/node", "ELF")
+	put(t, root, "var/lib/dpkg/status", "Package: docker-ce\nStatus: install ok installed\nVersion: 5:29.8.2-1~debian.12~bookworm\n")
+	lists := "var/lib/apt/lists/"
+	put(t, root, lists+"download.docker.com_linux_debian_dists_bookworm_InRelease", "Origin: Docker\nLabel: Docker CE\n")
+	put(t, root, lists+"download.docker.com_linux_debian_dists_bookworm_stable_binary-amd64_Packages", "Package: docker-ce\nVersion: 5:29.8.2-1~debian.12~bookworm\n")
+
+	s, _ := testutil.NewSigner()
+	out := t.TempDir()
+	distro, _ := fixture.WriteBundleSigned(s, "debian", "12", "source", map[string][]bundle.Entry{}, out)
+	upEntry := func(cve string, fixes ...[2]string) bundle.Entry {
+		cvss := 9.2
+		e := bundle.Entry{ID: cve, CVEIDs: []string{cve}, CVSS: &cvss, Ref: "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases"}
+		for _, f := range fixes {
+			e.Ranges = append(e.Ranges, bundle.Range{Type: "UPSTREAM", Events: []version.Event{{Introduced: f[0]}, {Fixed: f[1]}}})
+		}
+		return e
+	}
+	upstream, _ := fixture.WriteBundleSigned(s, "upstream", "1", "product", map[string][]bundle.Entry{
+		"node":   {upEntry("CVE-2026-111497", [2]string{"22.0.0", "22.23.4"}, [2]string{"24.0.0", "24.22.1"})},
+		"docker": {upEntry("CVE-2026-0102", [2]string{"29.0.0", "29.9.0"})},
+	}, out)
+	pub := filepath.Join(out, "key.pub")
+	os.WriteFile(pub, s.PublicKeyFile(), 0o644)
+
+	var stdout, stderr bytes.Buffer
+	code := scan([]string{"--root", root, "--offline", "--bundle", distro, "--upstream-bundle", upstream,
+		"--pubkey", pub, "--no-cache"}, &stdout, &stderr)
+	text := stdout.String()
+	if code == exitError {
+		t.Fatalf("scan failed: %s", stderr.String())
+	}
+	for _, want := range []string{
+		"Node.js  24.22.0 → 24.22.1",
+		"位置：/root/.nvm/versions/node/v24.22.0/bin/node（nvm）",
+		"nvm install 24.22.1",
+		"Docker Engine  29.8.2 → 29.9.0",
+		"sudo apt-get update && sudo apt-get install --only-upgrade docker-ce（从原第三方软件源升级）",
+		"== 非包管理安装的软件 ==",
+		"第三方软件包（未覆盖）0 个",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "未覆盖：来自第三方源的软件包") {
+		t.Errorf("docker-ce was evaluated by L2 and must not be listed as uncovered\n%s", text)
+	}
+	t.Log("\n" + text)
 }

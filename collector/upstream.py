@@ -133,20 +133,94 @@ TEXT_FORMS = [
     ),
 ]
 TEXT_SPAN = re.compile(_V + r"\s+(?:-|to|through)\s+" + _V, re.I)
+# "7.3.x below 7.3.17", "all 11.x before 11.5", "2.4.x through 2.4.27".
+TEXT_BRANCH = re.compile(
+    r"(?:all\s+)?([0-9]+(?:\.[0-9]+)*)\.x\s+"
+    r"(?:(before|below|prior\s+to|earlier\s+than|lower\s+than|<)"
+    r"|through|up\s+to(?:\s+and\s+including)?|<=)\s*" + _V,
+    re.I,
+)
+# "Fixed in OpenSSL 1.1.1d (Affected 1.1.1-1.1.1c)".
+FIXED_IN = re.compile(r"fixed\s+in\s+(.+?)\s*\(\s*affected\s+([^)]*)\)", re.I)
+# Product names some CNAs put in front of the version. Only names of products
+# we track; module paths whose versions are not the product's (moby/moby/v2)
+# are deliberately absent.
+PRODUCT_PREFIX = re.compile(
+    r"(?:all\s+)?(?:apache\s+http\s+server|openssl|docker\s+engine|postgresql|php|redis"
+    r"|mysql(?:\s+server)?|mariadb|nginx|openssh|containerd"
+    r"|github\.com/docker/docker(?:/[\w./-]*)?)(?:\s+versions?)?(?:\s+|-(?=[0-9])|$)",
+    re.I,
+)
+# Separators between the parts of a combined string:
+# "7.3.x below 7.3.17 and 7.4.x below 7.4.5", "2.2.0 to 2.2.31, 2.4.1 to 2.4.23",
+# "5.5.57 and earlier  5.6.37 and earlier".
+TEXT_SPLIT = re.compile(r"\s*[,;]\s*(?:and\s+)?|\s+and\s+(?=v?[0-9])|\s{2,}")
+
+
+def strip_product(value):
+    """'Apache HTTP Server 2.4.49' -> '2.4.49'; 'openssl-1.1.0a' -> '1.1.0a'."""
+    value = (value or "").strip()
+    match = PRODUCT_PREFIX.match(value)
+    return value[match.end() :].strip() if match else value
+
+
+def _exact(version):
+    """A single listed version, only if it is specific (at least x.y.z)."""
+    version = clean(version)
+    if version and len(re.findall(r"[0-9]+", version)) >= 3:
+        return version
+    return None
 
 
 def _text_events(value):
-    """Events for a prose range ("8.0.34 and prior", "2.4.0 - 2.4.48"), or None."""
+    """Events for one prose range ("8.0.34 and prior", "2.4.0 - 2.4.48"), or None."""
+    # "Apache HTTP Server 2.4 2.4.17 to 2.4.48": drop the leading branch label.
+    value = re.sub(r"^([0-9]+\.[0-9]+)\s+(?=\1\.)", "", value)
+    branch = TEXT_BRANCH.fullmatch(value)
+    if branch:
+        prefix, bound = branch.group(1), clean(branch.group(3))
+        if not bound or not bound.startswith(prefix + "."):
+            return None  # "7.2.x below 8.0.1" is not a branch statement
+        kind = "fixed" if branch.group(2) else "last_affected"
+        return [{"introduced": prefix + ".0"}, {kind: bound}]
     span = TEXT_SPAN.fullmatch(value)
     if span:
         low, high = clean(span.group(1)), clean(span.group(2))
+        if re.search(r"\.[xX*]$", span.group(1)):
+            return None
         return [{"introduced": low}, {"last_affected": high}] if low and high else None
     for pattern, kind in TEXT_FORMS:
         match = pattern.fullmatch(value)
         if match:
             version = clean(match.group(1))
             return [{"introduced": "0"}, {kind: version}] if version else None
+    exact = _exact(value)
+    if exact:
+        return [{"introduced": exact}, {"last_affected": exact}]
     return None
+
+
+def _text_ranges(value):
+    """Event lists for a prose version string; None unless every part is understood."""
+    fixed_in = FIXED_IN.fullmatch(value)
+    if fixed_in:
+        if not clean(strip_product(fixed_in.group(1))):
+            return None
+        out = []
+        for part in fixed_in.group(2).split(","):
+            low, dash, high = part.strip().partition("-")
+            low, high = clean(low), clean(high) if dash else _exact(low)
+            if not low or not high:
+                return None
+            out.append([{"introduced": low}, {"last_affected": high}])
+        return out or None
+    out = []
+    for part in TEXT_SPLIT.split(value):
+        events = _text_events(strip_product(part))
+        if events is None:
+            return None
+        out.append(events)
+    return out or None
 
 
 def cve_ranges(versions, default_status="unaffected", unparsed=None):
@@ -165,10 +239,13 @@ def cve_ranges(versions, default_status="unaffected", unparsed=None):
         if unparsed is not None:
             unparsed.append((item.get("version") or "").strip()[:80])
 
-    if (default_status or "unaffected").lower() == "affected":
-        # "Everything is affected except ..." cannot be expressed safely.
+    statuses = [(item.get("status") or "").lower() for item in versions or []]
+    if (default_status or "unaffected").lower() == "affected" and "unaffected" in statuses:
+        # "Everything is affected except ..." cannot be expressed safely. When
+        # only affected entries are listed they are still read; versions the
+        # record leaves unlisted are then missed, never wrongly reported.
         if unparsed is not None:
-            unparsed.append("<defaultStatus: affected>")
+            unparsed.append("<defaultStatus: affected + unaffected>")
         return [], len(versions or []) or 1
     for item in versions or []:
         if (item.get("status") or "").lower() != "affected":
@@ -176,23 +253,24 @@ def cve_ranges(versions, default_status="unaffected", unparsed=None):
         if (item.get("versionType") or "").lower() == "git":
             skip(item)
             continue
-        raw = (item.get("version") or "").strip()
+        original = (item.get("version") or "").strip()
+        raw = strip_product(original)
         bounded = item.get("lessThan") or item.get("lessThanOrEqual")
-        if not bounded and re.search(r"[<>=]", raw):
+        if not bounded and re.search(r"[<>=]", raw) and not TEXT_BRANCH.fullmatch(raw):
             events = _github_events(raw)
             if events is None:
                 skip(item)
             else:
                 ranges.append({"type": "UPSTREAM", "events": events})
             continue
-        if not bounded and re.search(r"\s", raw):
-            events = _text_events(raw)
-            if events is None:
+        if not bounded and (re.search(r"[\s,(]", raw) or raw != original):
+            found = _text_ranges(raw)
+            if found is None:
                 skip(item)
             else:
-                ranges.append({"type": "UPSTREAM", "events": events})
+                ranges.extend({"type": "UPSTREAM", "events": events} for events in found)
             continue
-        start, branch_end = _start(item.get("version"))
+        start, branch_end = _start(raw)
         if start is None:
             skip(item)
             continue
@@ -234,23 +312,31 @@ def _bound(rng):
     return None
 
 
+def _branch(version):
+    """Release branch of a version: '8.1.12' -> ('8', '1'); '13.1' -> ('13',).
+
+    Two-part versions (PostgreSQL 10+: 13.1) are treated as major.patch.
+    """
+    parts = re.findall(r"[0-9]+", version)
+    return tuple(parts[:1]) if len(parts) == 2 else tuple(parts[:2])
+
+
 def _branch_starts(ranges):
     """Give per-branch lists a lower bound.
 
     Older records list one bound per branch with no start, e.g. PHP's
     "before 7.4.33 | before 8.0.25 | before 8.1.12". Read literally, "before
     8.1.12" would also cover the already-fixed 8.0.30. Every such range except
-    the lowest therefore starts at its own branch (8.1.12 -> 8.1.0).
+    the lowest therefore starts at its own branch (8.1.12 -> 8.1.0, 13.1 -> 13.0).
     """
     open_start = [r for r in ranges if r["events"][0].get("introduced") == "0" and _bound(r)]
     if len(open_start) < 2:
         return ranges
     open_start.sort(key=lambda r: _key(_bound(r)))
     for lower, rng in zip(open_start, open_start[1:], strict=False):
-        parts = re.findall(r"[0-9]+", _bound(rng))
-        lower_parts = re.findall(r"[0-9]+", _bound(lower))
-        if len(parts) >= 2 and parts[:2] != lower_parts[:2]:
-            rng["events"][0] = {"introduced": f"{parts[0]}.{parts[1]}.0"}
+        branch = _branch(_bound(rng))
+        if len(branch) >= 1 and branch != _branch(_bound(lower)):
+            rng["events"][0] = {"introduced": ".".join(branch) + ".0"}
     return ranges
 
 

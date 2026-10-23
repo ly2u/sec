@@ -157,7 +157,7 @@
 
 | 来源 | 适用产品 | 说明 |
 |---|---|---|
-| CVE 记录中 CNA 填写的 `affected[]` | PHP、nginx、OpenSSL、Redis、MySQL 等 | CVE 入库时同步，`upstream-backfill` 用于一次性补齐历史数据。分支通配（如 `8.3.*`）转换为分支区间。开放区间（如 F5 的 `1.25.0 <*`）截断到下一个列出的分支起点，表示"已停止维护、不会修复"。含义有歧义的条目一律跳过，不做猜测。 |
+| CVE 记录中 CNA 填写的 `affected[]` | PHP、nginx、OpenSSL、Redis、MySQL 等 | CVE 入库时同步，`upstream-backfill` 用于一次性补齐历史数据。分支通配（如 `8.3.*`）转换为分支区间。开放区间（如 F5 的 `1.25.0 <*`）截断到下一个列出的分支起点，表示"已停止维护、不会修复"。老记录的文字写法（`8.0.34 and prior`、`7.3.x below 7.3.17`、`Fixed in OpenSSL 1.1.1d (Affected 1.1.1-1.1.1c)`、带产品名前缀等）只识别无歧义的形式，组合字符串须每一段都能识别才采用。`defaultStatus: affected` 时只读列出的受影响区间；若同时列有 unaffected 例外则整条跳过。只写分支（`Apache HTTP Server 2.4`）、上界只到大版本（`v9.6 to v14`）、把修复版本误填为受影响的列表一律跳过，不做猜测。 |
 | Node.js 安全工作组数据库 | Node.js | Node 内置了 Brotli、OpenSSL 等依赖，这些依赖的 CVE 登记在其他厂商名下，CVE 记录里查不到 Node。逐个读取 `vuln/core/*.json`，不使用 `index.json`（实测该文件更新滞后）。204 条记录中 200 条可以解析；无法解析的 4 条都是 2018 年以前 Node 0.10–10 时代的记录。 |
 
 **判定规则**：

@@ -188,6 +188,89 @@ def test_per_branch_lists_do_not_overlap():
     ]
 
 
+def _events(version):
+    return [r["events"] for r in cve_ranges([{"status": "affected", "version": version}])[0]]
+
+
+def test_branch_scoped_and_combined_prose():
+    # Strings exactly as found in PHP, PostgreSQL, Redis, MySQL and Apache records.
+    assert _events("7.3.x below 7.3.8") == [[{"introduced": "7.3.0"}, {"fixed": "7.3.8"}]]
+    assert _events("7.2.x < 7.2.19") == [[{"introduced": "7.2.0"}, {"fixed": "7.2.19"}]]
+    assert _events("all 11.x before 11.5") == [[{"introduced": "11.0"}, {"fixed": "11.5"}]]
+    assert _events("11.x prior to 11.3") == [[{"introduced": "11.0"}, {"fixed": "11.3"}]]
+    assert _events("3.2.x prior to 3.2.4") == [[{"introduced": "3.2.0"}, {"fixed": "3.2.4"}]]
+    assert _events("7.3.x below 7.3.17 and 7.4.x below 7.4.5") == [
+        [{"introduced": "7.3.0"}, {"fixed": "7.3.17"}],
+        [{"introduced": "7.4.0"}, {"fixed": "7.4.5"}],
+    ]
+    assert _events("2.2.0 to 2.2.31, 2.4.1 to 2.4.23") == [
+        [{"introduced": "2.2.0"}, {"last_affected": "2.2.31"}],
+        [{"introduced": "2.4.1"}, {"last_affected": "2.4.23"}],
+    ]
+    assert _events("5.5.57 and earlier  5.6.37 and earlier  5.7.19 and earlier") == [
+        [{"introduced": "0"}, {"last_affected": "5.5.57"}],
+        [{"introduced": "5.6.0"}, {"last_affected": "5.6.37"}],
+        [{"introduced": "5.7.0"}, {"last_affected": "5.7.19"}],
+    ]
+    assert _events("Apache HTTP Server through 2.2.34 and 2.4.x through 2.4.27") == [
+        [{"introduced": "0"}, {"last_affected": "2.2.34"}],
+        [{"introduced": "2.4.0"}, {"last_affected": "2.4.27"}],
+    ]
+    # PostgreSQL 10+ versions are major.minor: 10.15 belongs to branch 10.
+    pg = "All PostgreSQL versions before 13.1, before 12.5, before 11.10, before 10.15, before 9.6.20"
+    assert _events(pg) == [
+        [{"introduced": "13.0"}, {"fixed": "13.1"}],
+        [{"introduced": "12.0"}, {"fixed": "12.5"}],
+        [{"introduced": "11.0"}, {"fixed": "11.10"}],
+        [{"introduced": "10.0"}, {"fixed": "10.15"}],
+        [{"introduced": "0"}, {"fixed": "9.6.20"}],
+    ]
+
+
+def test_product_prefixes_and_fixed_in_form():
+    assert _events("Apache HTTP Server 2.4.49") == [
+        [{"introduced": "2.4.49"}, {"last_affected": "2.4.49"}]
+    ]
+    assert _events("Apache HTTP Server 2.4 2.4.17 to 2.4.48") == [
+        [{"introduced": "2.4.17"}, {"last_affected": "2.4.48"}]
+    ]
+    assert _events("openssl-1.1.0a") == [[{"introduced": "1.1.0a"}, {"last_affected": "1.1.0a"}]]
+    assert _events("Docker Engine < 29.5.1") == [[{"introduced": "0"}, {"fixed": "29.5.1"}]]
+    assert _events("github.com/docker/docker/daemon <= 28.5.2") == [
+        [{"introduced": "0"}, {"last_affected": "28.5.2"}]
+    ]
+    assert _events("Fixed in OpenSSL 1.1.1d (Affected 1.1.1-1.1.1c)") == [
+        [{"introduced": "1.1.1"}, {"last_affected": "1.1.1c"}]
+    ]
+    assert _events("Fixed in Apache HTTP Server 2.4.34 (Affected 2.4.18-2.4.30,2.4.33)") == [
+        [{"introduced": "2.4.18"}, {"last_affected": "2.4.30"}],
+        [{"introduced": "2.4.33"}, {"last_affected": "2.4.33"}],
+    ]
+
+
+def test_unclear_prose_stays_skipped():
+    for value in [
+        "Apache HTTP Server 2.4",  # a whole branch named, no versions
+        "Apache HTTP Server",
+        "Affects v9.6 to v14",  # 14.5 would sort above "14"
+        "PostgreSQL 15.3, PostgreSQL 14.8, PostgreSQL 13.11",  # these are the fixes
+        "github.com/moby/moby/v2/daemon < 2.0.0-beta.14",  # module, not engine, versions
+        "7.2.x below 8.0.1",
+        "2.4.x to 2.4.9",
+    ]:
+        assert cve_ranges([{"status": "affected", "version": value}]) == ([], 1), value
+
+
+def test_default_affected_reads_listed_ranges_only_without_exceptions():
+    listed = [{"status": "affected", "version": "8.1.*", "lessThan": "8.1.29"}]
+    assert cve_ranges(listed, "affected")[0][0]["events"] == [
+        {"introduced": "8.1.0"},
+        {"fixed": "8.1.29"},
+    ]
+    exceptions = [*listed, {"status": "unaffected", "version": "8.1.29"}]
+    assert cve_ranges(exceptions, "affected") == ([], 2)
+
+
 def test_coverage_reports_unread_strings(db):
     odd = {
         "vendor": "PHP Group",

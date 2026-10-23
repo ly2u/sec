@@ -3,6 +3,7 @@
 services:
   web:
     networks:
+      db: {}
       private: {}
       secwatch-edge:
         aliases: [secwatch-web]

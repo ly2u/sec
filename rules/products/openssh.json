@@ -1,0 +1,53 @@
+{
+  "slug": "openssh",
+  "name": "OpenSSH",
+  "identity": {
+    "cve_affected": [
+      {
+        "vendor": "OpenBSD",
+        "product": "OpenSSH"
+      },
+      {
+        "vendor": "openssh",
+        "product": "openssh"
+      }
+    ],
+    "notes": "大量 OpenSSH CVE 的厂商字段为 n/a，需结合 CPE 或人工维护"
+  },
+  "detect": {
+    "binaries": [
+      {
+        "glob": "/usr/local/sbin/sshd",
+        "method": "source"
+      },
+      {
+        "glob": "/usr/local/openssh*/sbin/sshd",
+        "method": "source"
+      },
+      {
+        "glob": "/usr/local/bin/ssh",
+        "method": "source"
+      },
+      {
+        "glob": "/usr/local/openssh*/bin/ssh",
+        "method": "source"
+      }
+    ],
+    "process_names": [
+      "sshd"
+    ],
+    "version_args": [
+      "-V"
+    ],
+    "version_regex": "OpenSSH_([0-9]+\\.[0-9]+(?:p[0-9]+)?)",
+    "accept_nonzero_exit": true,
+    "packages": {}
+  },
+  "upgrade": {
+    "baota": "在宝塔面板「软件商店」中更新 {name} 到 {fixed} 或更高版本，然后重启 {name}",
+    "lnmp": "使用原安装脚本（LNMP/OneinStack 等）的升级功能，或下载 {fixed} 源码按原参数重新编译安装，然后重启服务",
+    "source": "下载 {fixed} 或更高版本的官方源码，按原编译参数重新编译安装，然后重启服务",
+    "binary": "从官方网站下载 {fixed} 或更高版本替换现有程序，然后重启服务",
+    "process": "该程序不属于任何软件包，请按其原来的安装方式升级到 {fixed} 或更高版本"
+  }
+}

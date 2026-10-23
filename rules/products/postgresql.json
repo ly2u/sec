@@ -1,0 +1,45 @@
+{
+  "slug": "postgresql",
+  "name": "PostgreSQL",
+  "identity": {
+    "cve_affected": [
+      {
+        "vendor": "PostgreSQL",
+        "product": "PostgreSQL"
+      },
+      {
+        "vendor": "n/a",
+        "product": "PostgreSQL"
+      }
+    ]
+  },
+  "detect": {
+    "binaries": [
+      {
+        "glob": "/www/server/pgsql/bin/postgres",
+        "method": "baota"
+      },
+      {
+        "glob": "/usr/local/pgsql/bin/postgres",
+        "method": "source"
+      }
+    ],
+    "process_names": [
+      "postgres"
+    ],
+    "version_args": [
+      "--version"
+    ],
+    "version_regex": "\\(PostgreSQL\\) ([0-9]+\\.[0-9]+)",
+    "packages": {
+      "source_regex": "^postgresql-[0-9]+$"
+    }
+  },
+  "upgrade": {
+    "baota": "在宝塔面板「软件商店」中更新 {name} 到 {fixed} 或更高版本，然后重启 {name}",
+    "lnmp": "使用原安装脚本（LNMP/OneinStack 等）的升级功能，或下载 {fixed} 源码按原参数重新编译安装，然后重启服务",
+    "source": "下载 {fixed} 或更高版本的官方源码，按原编译参数重新编译安装，然后重启服务",
+    "binary": "从官方网站下载 {fixed} 或更高版本替换现有程序，然后重启服务",
+    "process": "该程序不属于任何软件包，请按其原来的安装方式升级到 {fixed} 或更高版本"
+  }
+}

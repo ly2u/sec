@@ -1,0 +1,98 @@
+{
+  "slug": "node",
+  "name": "Node.js",
+  "identity": {
+    "cve_affected": [
+      {
+        "vendor": "nodejs",
+        "product": "node"
+      },
+      {
+        "vendor": "Node.js",
+        "product": "Node.js"
+      },
+      {
+        "vendor": "nodejs",
+        "product": "Node.js"
+      }
+    ],
+    "notes": "仅 Node.js 运行时本身，不含 npm 依赖"
+  },
+  "detect": {
+    "binaries": [
+      {
+        "glob": "/www/server/nodejs/*/bin/node",
+        "method": "baota"
+      },
+      {
+        "glob": "/usr/local/bin/node",
+        "method": "binary"
+      },
+      {
+        "glob": "/usr/local/node/bin/node",
+        "method": "binary"
+      },
+      {
+        "glob": "/usr/local/node*/bin/node",
+        "method": "binary"
+      },
+      {
+        "glob": "/opt/node*/bin/node",
+        "method": "binary"
+      },
+      {
+        "glob": "/root/.nvm/versions/node/*/bin/node",
+        "method": "nvm"
+      },
+      {
+        "glob": "/home/*/.nvm/versions/node/*/bin/node",
+        "method": "nvm"
+      },
+      {
+        "glob": "/root/.local/share/fnm/node-versions/*/installation/bin/node",
+        "method": "fnm"
+      },
+      {
+        "glob": "/home/*/.local/share/fnm/node-versions/*/installation/bin/node",
+        "method": "fnm"
+      },
+      {
+        "glob": "/root/.volta/tools/image/node/*/bin/node",
+        "method": "volta"
+      },
+      {
+        "glob": "/home/*/.volta/tools/image/node/*/bin/node",
+        "method": "volta"
+      },
+      {
+        "glob": "/usr/local/n/versions/node/*/bin/node",
+        "method": "n"
+      }
+    ],
+    "process_names": [
+      "node",
+      "nodejs"
+    ],
+    "version_args": [
+      "--version"
+    ],
+    "version_regex": "^v([0-9]+\\.[0-9]+\\.[0-9]+)",
+    "path_version_regex": "/v?([0-9]+\\.[0-9]+\\.[0-9]+)/(?:installation/)?bin/node$",
+    "packages": {
+      "names": [
+        "nodejs"
+      ]
+    }
+  },
+  "upgrade": {
+    "baota": "在宝塔面板「网站 → Node 项目 → Node 版本管理」中安装 {fixed} 并切换项目使用的版本，然后重启项目",
+    "lnmp": "使用原安装脚本（LNMP/OneinStack 等）的升级功能，或下载 {fixed} 源码按原参数重新编译安装，然后重启服务",
+    "source": "下载 {fixed} 或更高版本的官方源码，按原编译参数重新编译安装，然后重启服务",
+    "binary": "从官方网站下载 {fixed} 或更高版本替换现有程序，然后重启服务",
+    "process": "该程序不属于任何软件包，请按其原来的安装方式升级到 {fixed} 或更高版本",
+    "nvm": "nvm install {fixed} && nvm alias default {fixed}，然后重启使用 Node 的服务（例如 pm2 restart all）",
+    "fnm": "fnm install {fixed} && fnm default {fixed}，然后重启使用 Node 的服务",
+    "volta": "volta install node@{fixed}，然后重启使用 Node 的服务",
+    "n": "n {fixed}，然后重启使用 Node 的服务"
+  }
+}

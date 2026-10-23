@@ -1,0 +1,73 @@
+{
+  "slug": "nginx",
+  "name": "nginx",
+  "identity": {
+    "cve_affected": [
+      {
+        "vendor": "F5",
+        "product": "NGINX Open Source"
+      },
+      {
+        "vendor": "F5",
+        "product": "NGINX Plus"
+      },
+      {
+        "vendor": "nginx",
+        "product": "nginx"
+      }
+    ],
+    "notes": "nginx 核心版本；OpenResty 按其内置的 nginx 核心版本判断"
+  },
+  "detect": {
+    "binaries": [
+      {
+        "glob": "/www/server/nginx/sbin/nginx",
+        "method": "baota"
+      },
+      {
+        "glob": "/usr/local/nginx/sbin/nginx",
+        "method": "lnmp"
+      },
+      {
+        "glob": "/usr/local/openresty/nginx/sbin/nginx",
+        "method": "source"
+      },
+      {
+        "glob": "/opt/nginx/sbin/nginx",
+        "method": "source"
+      },
+      {
+        "glob": "/usr/local/sbin/nginx",
+        "method": "source"
+      }
+    ],
+    "process_names": [
+      "nginx",
+      "openresty"
+    ],
+    "version_args": [
+      "-V"
+    ],
+    "version_regex": "(?:nginx|openresty)/([0-9]+\\.[0-9]+\\.[0-9]+)",
+    "bundled": [
+      {
+        "product": "openssl",
+        "regex": "built with OpenSSL ([0-9]+\\.[0-9]+\\.[0-9]+[a-z]?)"
+      }
+    ],
+    "packages": {
+      "names": [
+        "nginx",
+        "openresty"
+      ]
+    },
+    "package_version_regex": "^(?:[0-9]+:)?([0-9]+\\.[0-9]+\\.[0-9]+)"
+  },
+  "upgrade": {
+    "baota": "在宝塔面板「软件商店」中更新 {name} 到 {fixed} 或更高版本，然后重启 {name}",
+    "lnmp": "使用原安装脚本（LNMP/OneinStack 等）的升级功能，或下载 {fixed} 源码按原参数重新编译安装，然后重启服务",
+    "source": "下载 {fixed} 或更高版本的官方源码，按原编译参数重新编译安装，然后重启服务",
+    "binary": "从官方网站下载 {fixed} 或更高版本替换现有程序，然后重启服务",
+    "process": "该程序不属于任何软件包，请按其原来的安装方式升级到 {fixed} 或更高版本"
+  }
+}

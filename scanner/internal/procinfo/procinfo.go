@@ -387,6 +387,17 @@ func newOwnerIndex(h system.Host, o system.OS, inv *system.Inventory) *ownerInde
 	return idx
 }
 
+// Owners maps files to the installed package that owns them.
+type Owners struct{ idx *ownerIndex }
+
+// NewOwners builds a file-owner lookup for the scanned system.
+func NewOwners(h system.Host, o system.OS, inv *system.Inventory) *Owners {
+	return &Owners{idx: newOwnerIndex(h, o, inv)}
+}
+
+// Owner returns the binary package owning path, or "" if none does.
+func (o *Owners) Owner(path string) string { return o.idx.owner(path) }
+
 var safePath = regexp.MustCompile(`^/[A-Za-z0-9._+/@-]+$`)
 
 func (idx *ownerIndex) owner(path string) string {

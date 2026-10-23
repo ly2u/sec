@@ -32,6 +32,10 @@
 
 ## 文档
 
+- [阶段 1 开发启动与验证](docs/installation.md)
+- [阶段 1 交付报告](docs/phase-1-report.md)
+- [实际生成的 PostgreSQL 表结构](docs/database-schema.sql)
+- [小样本容量记录](docs/capacity.md)
 - [架构决策](docs/ARCHITECTURE.md)
 - [实施计划](docs/CODEX_BRIEF.md)
 - [产品需求（长期愿景）](docs/prd-v0.1.md)

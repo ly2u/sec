@@ -100,6 +100,9 @@ def test_health_no_store_and_no_connection_details(db, monkeypatch):
     response = TestClient(app).get("/api/v1/health")
     assert response.status_code == 200 and response.json() == {"status": "ok"}
     assert response.headers["Cache-Control"] == "no-store"
+    assert TestClient(app).get("/docs").status_code == 404
+    assert TestClient(app).get("/redoc").status_code == 404
+    assert TestClient(app).get("/openapi.json").status_code == 200
     monkeypatch.setenv("DATABASE_URL", "sqlite:////nonexistent-directory/db")
     response = TestClient(app).get("/api/v1/health")
     assert response.status_code == 503 and response.json() == {"status": "unavailable"}

@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from apps.server.db import engine_for
 
-app = FastAPI(title="LY2U SecWatch", version="0.1.0")
+app = FastAPI(title="LY2U SecWatch", version="0.1.0", docs_url=None, redoc_url=None)
 
 
 @app.get("/api/v1/health")

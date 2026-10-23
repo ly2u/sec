@@ -128,35 +128,44 @@
 
 `unfixed` / `wont_fix` 状态需要单独说明，例如："已知受影响，发行版暂未修复或不计划修复"，并给出缓解建议。不能简单输出"请升级"，因为根本没有可升级的版本。
 
-### L2 非包管理安装（差异化重点）
+### L2 非包管理安装（差异化重点，已实现）
 
-规则文件位于 `rules/products/<product>.yaml`，每条规则包含：
+**覆盖范围**：
 
-- 探测路径
-- 版本提取方式
-- 上游受影响范围
-- 来源链接
-- 正例和反例测试用例
+- 宝塔、LNMP/OneinStack 等一键脚本、源码编译、官方二进制、OpenResty 安装的程序
+- nvm、fnm、volta、n，以及宝塔 Node 版本管理器安装的 Node.js
+- 路径不在规则中、但正在运行的程序（通过 `/proc/*/exe` 发现，且不属于任何软件包）
+- 第三方软件源的软件包（nginx.org、Docker、NodeSource、sury、PGDG 等），从包版本中提取上游版本
+- 静态编译进其他程序的组件，目前支持 nginx 内置的 OpenSSL（解析 `nginx -V` 输出）
+- 容器内运行的相关程序：只识别并提示，不检查容器内部
 
-| 场景 | 典型路径 |
-|---|---|
-| 宝塔 | `/www/server/nginx/sbin/nginx`、`/www/server/php/*/bin/php`、`/www/server/mysql/bin/mysqld` |
-| 源码编译 / 手动安装 | `/usr/local/nginx/sbin/nginx`、`/usr/local/bin/node`、`/usr/local/php*/bin/php` |
-| Node 版本管理器 | `~/.nvm/versions/node/*/bin/node`（仅限 root 及 `/home/*`，可通过开关关闭） |
-| 1Panel | `/opt/1panel` 及其应用容器（V0.1 只做识别，深度扫描放在 V0.2） |
+首批覆盖 12 个产品：nginx、PHP、Node.js、OpenSSL、OpenSSH、Redis、MySQL、MariaDB、Apache httpd、PostgreSQL、Docker Engine、containerd。
+
+**产品规则** `rules/products/<slug>.json`（使用 JSON 而非 YAML：Go 与 Python 标准库都能解析，不需要额外的解析器依赖）。字段说明见 `rules/products/README.md`。
+
+- `identity` 段由服务端使用，用于在 CVE 记录中识别该产品。厂商名和产品名已于 2026-10-23 对照真实的 CVE 数据核实过。nginx 只匹配 NGINX Open Source，**排除 NGINX Plus**（版本号体系不同），也排除 nginx-ui、ingress-nginx 等名字相近的产品。
+- `detect` 段由扫描器使用。**规则编译进扫描器，不从服务器下发**：规则决定"执行哪个程序、带什么参数"，若由服务器下发，服务器一旦被攻破，攻击者就能指挥所有用户的扫描器执行任意程序。扫描器内嵌一份副本，测试会校验它与仓库中的规则一致。
+
+**执行安全**：
+
+- 只执行属于 root、且路径上每一级目录都不可被其他用户写入的程序。否则，普通用户可以替换程序，让以 root 运行的扫描器执行其代码。`/tmp` 下的任何程序都不会被执行。
+- 参数固定且经过校验，不经过 shell；超时 5 秒，输出上限 64 KB，环境变量清空，超时后终止整个进程组。
+- 不能安全执行的程序（例如普通用户目录下的 nvm），从路径中读取版本号；读不到时如实说明原因。
+- `--no-exec` 模式下只使用路径和软件包信息，不执行任何程序。
+
+**上游漏洞数据**：`upstream-1` 数据包，签名方式与发行版数据包相同，数据存放在 `upstream_advisories` 表中。
+
+| 来源 | 适用产品 | 说明 |
+|---|---|---|
+| CVE 记录中 CNA 填写的 `affected[]` | PHP、nginx、OpenSSL、Redis、MySQL 等 | CVE 入库时同步，`upstream-backfill` 用于一次性补齐历史数据。分支通配（如 `8.3.*`）转换为分支区间。开放区间（如 F5 的 `1.25.0 <*`）截断到下一个列出的分支起点，表示"已停止维护、不会修复"。含义有歧义的条目一律跳过，不做猜测。 |
+| Node.js 安全工作组数据库 | Node.js | Node 内置了 Brotli、OpenSSL 等依赖，这些依赖的 CVE 登记在其他厂商名下，CVE 记录里查不到 Node。逐个读取 `vuln/core/*.json`，不使用 `index.json`（实测该文件更新滞后）。204 条记录中 200 条可以解析；无法解析的 4 条都是 2018 年以前 Node 0.10–10 时代的记录。 |
 
 **判定规则**：
 
-- 这类安装没有回移植问题，上游版本范围直接适用。版本匹配时可判 `CONFIRMED_AFFECTED`。
-- 前提是版本号读取可靠；读取失败时判 `UNKNOWN`。
-
-**安全约束**：
-
-- 只执行规则中写死的绝对路径和只读参数（`-v`、`-V`、`--version`）。
-- 设置超时，不经过 shell。
-- 提供 `--no-exec` 开关：开启后只读取包数据库和文件元数据，不执行任何二进制。
-
-**V0.1 首批产品**（约 12 个，后续靠社区 PR 扩充）：nginx、Apache httpd、PHP、Node.js、OpenSSL、OpenSSH、MySQL、MariaDB、Redis、PostgreSQL、Docker Engine、sudo。
+- 上游版本没有回移植问题，命中版本范围即判定为 `CONFIRMED_AFFECTED`。
+- 修复目标取高于当前版本的最小修复版本。如果当前版本系列已停止维护，修复目标自然落到下一个仍受支持的分支。
+- 修复指引按安装方式给出（宝塔、nvm、源码编译等）。第三方源的软件包给出包管理器命令。
+- 内置的 OpenSSL 会单独说明：升级系统的 OpenSSL 对它无效。
 
 ### L3 补丁是否生效
 

@@ -1,9 +1,12 @@
+import logging
 from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy.orm import Session
 
 from apps.server.models import IngestionState
+
+logger = logging.getLogger(__name__)
 
 
 def state_for(engine, source):
@@ -14,6 +17,7 @@ def state_for(engine, source):
                 "revision": state.source_revision,
                 "cursor": state.cursor,
                 "completed": state.completed,
+                "has_completed": state.has_completed,
             }
             if state
             else None
@@ -33,6 +37,7 @@ def ingest(
     metadata=None,
     http=None,
     finish=None,
+    restart_on_revision_change=False,
 ):
     """Commit data and the record offset together; replay a pinned stream on failure.
 
@@ -51,15 +56,28 @@ def ingest(
                 "completed": True,
             }
         if state and state.source_revision != revision and not state.completed and not restart:
-            raise ValueError(
-                "Incomplete snapshot changed; resume the pinned source or use --restart"
+            if not restart_on_revision_change:
+                raise ValueError(
+                    "Incomplete snapshot changed; resume the pinned source or use --restart"
+                )
+            logger.warning(
+                "%s revision changed during incomplete import; automatically restarting from record zero",
+                source,
             )
+            restart = True
+        has_completed = bool(state and (state.has_completed or state.completed))
         if state is None:
             state = IngestionState(source=source)
             session.add(state)
         if restart or state.source_revision != revision:
-            state.cursor = {"offset": 0, **(metadata or {})}
+            state.cursor = {**(metadata or {}), "offset": 0, "is_baseline": not has_completed}
             state.records_processed = 0
+        else:
+            state.cursor = {
+                **state.cursor,
+                "is_baseline": state.cursor.get("is_baseline", not has_completed),
+            }
+        state.has_completed = has_completed
         state.source_revision = revision
         state.completed = False
         state.last_error = None
@@ -68,15 +86,19 @@ def ingest(
     def commit(batch, position, completed=False):
         with Session(engine) as session, session.begin():
             state = session.get(IngestionState, source)
+            session.info["is_baseline"] = state.cursor["is_baseline"]
             apply_batch(session, batch)
             if completed and finish:
                 finish(session)
             state.cursor = {**state.cursor, "offset": position}
             state.records_processed = position
             state.completed = completed
+            state.has_completed = state.has_completed or completed
             state.last_error = None
             state.last_success_at = datetime.now(UTC)
             state.updated_at = datetime.now(UTC)
+        if position % 1000 == 0 or completed:
+            logger.info("%s checkpoint offset=%d completed=%s", source, position, completed)
 
     for attempt in range(4):
         state = state_for(engine, source)

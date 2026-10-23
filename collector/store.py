@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from apps.server.models import Vulnerability, VulnerabilityEvent
+from apps.server.models import KEVEntry, Vulnerability, VulnerabilityEvent
 
 
 def digest(value):
@@ -47,7 +47,8 @@ def ensure_vulnerabilities(session, ids):
             "title": "",
             "description": "",
             "cwes": [],
-            "cisa_kev": False,
+            "adp_kev_flag": False,
+            "cvss_metrics": [],
         }
         for value in sorted(set(ids))
     ]
@@ -66,6 +67,7 @@ def event(session, vulnerability_id, event_type, revision, source, happened_at, 
                 "source": source,
                 "happened_at": happened_at,
                 "priority": priority,
+                "is_baseline": session.info.get("is_baseline", True),
                 "payload": payload,
             }
         ],
@@ -76,3 +78,17 @@ def event(session, vulnerability_id, event_type, revision, source, happened_at, 
 
 def visible_vulnerabilities():
     return select(Vulnerability).where(Vulnerability.status == "PUBLISHED")
+
+
+def visible_events():
+    """Shared event scope for the future home page and RSS; bootstrap is never public."""
+    return select(VulnerabilityEvent).where(VulnerabilityEvent.is_baseline.is_(False))
+
+
+def telegram_events():
+    return visible_events().where(VulnerabilityEvent.priority.in_(("P0", "P1")))
+
+
+def kev_vulnerabilities():
+    """KEV membership comes only from the active official catalog, never ADP flags."""
+    return select(Vulnerability).join(KEVEntry).where(KEVEntry.is_active.is_(True))

@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import shutil
 import signal
 import sys
@@ -20,9 +21,11 @@ from collector.adapters.cvelist import CVEAdapter
 from collector.adapters.epss import EPSSAdapter
 from collector.adapters.kev import KEVAdapter
 from collector.http import FeedHTTP
+from collector.store import kev_vulnerabilities, visible_events
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     parser = argparse.ArgumentParser(description="SecWatch bounded, resumable public-feed importer")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("idle", help="Phase 1 worker: wait, do not automatically ingest")
@@ -52,11 +55,23 @@ def main():
                 model.__tablename__: session.scalar(select(func.count()).select_from(model))
                 for model in (Vulnerability, KEVEntry, EPSSScore, VulnerabilityEvent)
             }
+            counts["kev_active"] = session.scalar(
+                kev_vulnerabilities().with_only_columns(func.count())
+            )
+            counts["baseline_events"] = session.scalar(
+                select(func.count())
+                .select_from(VulnerabilityEvent)
+                .where(VulnerabilityEvent.is_baseline.is_(True))
+            )
+            counts["non_baseline_events"] = session.scalar(
+                visible_events().with_only_columns(func.count())
+            )
             states = [
                 {
                     "source": state.source,
                     "processed": state.records_processed,
                     "completed": state.completed,
+                    "has_completed": state.has_completed,
                     "last_error": state.last_error,
                 }
                 for state in session.scalars(select(IngestionState))

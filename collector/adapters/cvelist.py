@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -7,12 +8,14 @@ from sqlalchemy import select
 from stream_unzip import stream_unzip
 
 from apps.server.models import Vulnerability
+from collector.cvss import assessments
 from collector.ingestion import ingest, state_for
 from collector.store import digest, event, timestamp, upsert
 
 CVE_ID = re.compile(r"CVE-\d{4}-\d{4,}")
 RELEASES = "https://api.github.com/repos/CVEProject/cvelistV5/releases?per_page=5"
 DELTA_LOG = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main/cves/deltaLog.json"
+logger = logging.getLogger(__name__)
 
 
 def record_url(cve_id):
@@ -53,21 +56,15 @@ def normalize(record):
         for item in containers.get("adp", [])
         if item.get("providerMetadata", {}).get("shortName", "").upper().startswith("CISA")
     ]
-    facts = {"cvss": None, "severity": None, "ssvc": None, "cisa_kev": False}
+    facts = {**assessments(cna, containers.get("adp", [])), "ssvc": None, "adp_kev_flag": False}
     cwes = set()
-    # CISA supplemental assessment takes precedence, while raw CNA facts remain intact.
     for container in [cna, *adp]:
         for metric in container.get("metrics", []):
-            for key in ("cvssV2_0", "cvssV3_0", "cvssV3_1", "cvssV4_0"):
-                score = metric.get(key)
-                if score:
-                    facts["cvss"] = float(score["baseScore"])
-                    facts["severity"] = score.get("baseSeverity", "").upper() or None
             other = metric.get("other", {})
             if other.get("type", "").lower() == "ssvc":
                 facts["ssvc"] = other.get("content")
-            if other.get("type", "").lower() in ("kev", "cisa_kev"):
-                facts["cisa_kev"] = True
+            if container in adp and other.get("type", "").lower() in ("kev", "cisa_kev"):
+                facts["adp_kev_flag"] = True
         for problem in container.get("problemTypes", []):
             for description in problem.get("descriptions", []):
                 cwes.update(
@@ -77,11 +74,11 @@ def normalize(record):
                     )
                 )
         for reference in container.get("references", []):
-            if any(
+            if container in adp and any(
                 "known-exploited-vulnerabilities" in str(tag).lower()
                 for tag in reference.get("tags", [])
             ):
-                facts["cisa_kev"] = True
+                facts["adp_kev_flag"] = True
     descriptions = (
         cna.get("rejectedReasons", []) if state == "REJECTED" else cna.get("descriptions", [])
     )
@@ -103,48 +100,79 @@ def normalize(record):
 
 
 def apply_records(session, records):
-    for record in records:
-        row = normalize(record)
-        old = session.execute(
-            select(Vulnerability).where(Vulnerability.id == row["id"])
-        ).scalar_one_or_none()
-        if old and old.record_hash == row["record_hash"]:
+    rows = [normalize(record) for record in records]
+    if not rows:
+        return
+    columns = (
+        Vulnerability.id,
+        Vulnerability.status,
+        Vulnerability.record_hash,
+        Vulnerability.modified_at,
+        Vulnerability.cvss,
+        Vulnerability.severity,
+        Vulnerability.cvss_metrics,
+    )
+    existing = {
+        row["id"]: dict(row)
+        for row in session.execute(
+            select(*columns).where(Vulnerability.id.in_([row["id"] for row in rows]))
+        ).mappings()
+    }
+    pending = {}
+    events = []
+    for row in rows:
+        old = existing.get(row["id"])
+        if (
+            old
+            and old["record_hash"] == row["record_hash"]
+            and old["cvss_metrics"] == row["cvss_metrics"]
+        ):
             continue
-        if old and old.modified_at and row["modified_at"]:
+        if old and old["modified_at"] and row["modified_at"]:
             previous = (
-                old.modified_at.replace(tzinfo=UTC)
-                if old.modified_at.tzinfo is None
-                else old.modified_at
+                old["modified_at"].replace(tzinfo=UTC)
+                if old["modified_at"].tzinfo is None
+                else old["modified_at"]
             )
             if row["modified_at"] < previous:
                 continue
-        if old and old.record_hash and (old.severity, old.cvss) != (row["severity"], row["cvss"]):
-            event(
-                session,
-                row["id"],
-                "severity_changed",
-                row["record_hash"],
-                "cvelistV5",
-                row["modified_at"] or datetime.now(UTC),
-                {
-                    "before": {"severity": old.severity, "cvss": old.cvss},
-                    "after": {"severity": row["severity"], "cvss": row["cvss"]},
-                },
-                "P2",
+        if (
+            old
+            and old["record_hash"]
+            and (old["severity"], old["cvss"]) != (row["severity"], row["cvss"])
+        ):
+            events.append(
+                (
+                    row["id"],
+                    "severity_changed",
+                    row["record_hash"],
+                    "cvelistV5",
+                    row["modified_at"] or datetime.now(UTC),
+                    {
+                        "before": {"severity": old["severity"], "cvss": old["cvss"]},
+                        "after": {"severity": row["severity"], "cvss": row["cvss"]},
+                    },
+                    "P2",
+                )
             )
-        if old and old.status != "REJECTED" and row["status"] == "REJECTED":
-            event(
-                session,
-                row["id"],
-                "rejected",
-                row["record_hash"],
-                "cvelistV5",
-                row["modified_at"] or datetime.now(UTC),
-                {"reason": row["description"]},
-                "P3",
+        if old and old["status"] != "REJECTED" and row["status"] == "REJECTED":
+            events.append(
+                (
+                    row["id"],
+                    "rejected",
+                    row["record_hash"],
+                    "cvelistV5",
+                    row["modified_at"] or datetime.now(UTC),
+                    {"reason": row["description"]},
+                    "P3",
+                )
             )
-        upsert(session, Vulnerability, [row], ["id"])
-        session.expire_all()
+        pending[row["id"]] = row
+        existing[row["id"]] = row
+    # One lookup and one upsert per batch; avoid per-record round trips on the full corpus.
+    upsert(session, Vulnerability, list(pending.values()), ["id"])
+    for values in events:
+        event(session, *values)
 
 
 class CVEAdapter:
@@ -204,6 +232,7 @@ class CVEAdapter:
         if state and not state["completed"] and not restart:
             entries = state["cursor"]["entries"]
             newest = state["cursor"]["fetch_time"]
+            warnings = state["cursor"].get("warnings", [])
         else:
             selected = [
                 entry
@@ -214,9 +243,15 @@ class CVEAdapter:
                 return {"source": "cve:delta", "processed": 0, "completed": True}
             # Latest fetched document wins if an ID occurs in several delta intervals.
             unique = {}
+            warnings = list(state["cursor"].get("warnings", [])) if state and not restart else []
             for entry in sorted(selected, key=lambda item: timestamp(item["fetchTime"])):
                 if entry.get("error"):
-                    raise ValueError("Official delta reports source errors; watermark not advanced")
+                    logger.warning(
+                        "Official delta entry at %s contains source errors; processing its remaining records",
+                        entry["fetchTime"],
+                    )
+                    if entry not in warnings:
+                        warnings.append(entry)
                 for item in entry.get("new", []) + entry.get("updated", []):
                     unique[item["cveId"]] = item
             entries = sorted(unique)
@@ -234,6 +269,6 @@ class CVEAdapter:
             apply_records,
             limit=limit,
             restart=restart,
-            metadata={"entries": entries, "fetch_time": newest},
+            metadata={"entries": entries, "fetch_time": newest, "warnings": warnings},
             http=self.http,
         )

@@ -7,7 +7,7 @@ from apps.server import models  # noqa: F401
 from apps.server.db import Base, database_url
 
 config = context.config
-fileConfig(config.config_file_name)
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 target_metadata = Base.metadata
 
 

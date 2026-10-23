@@ -130,4 +130,5 @@ class EPSSAdapter:
             metadata={"url": url, "score_date": str(score_date), "model": model},
             http=self.http,
             finish=finish,
+            restart_on_revision_change=True,
         )

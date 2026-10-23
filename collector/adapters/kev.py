@@ -14,20 +14,27 @@ def apply_entries(session, records):
     if not records:
         return
     ids = [record["vulnerability_id"] for record in records]
-    existing = set(
-        session.scalars(select(KEVEntry.vulnerability_id).where(KEVEntry.vulnerability_id.in_(ids)))
+    existing = dict(
+        session.execute(
+            select(KEVEntry.vulnerability_id, KEVEntry.is_active).where(
+                KEVEntry.vulnerability_id.in_(ids)
+            )
+        ).all()
     )
     ensure_vulnerabilities(session, ids)
     upsert(session, KEVEntry, records, ["vulnerability_id"])
     for row in records:
-        if row["vulnerability_id"] not in existing:
+        cve_id = row["vulnerability_id"]
+        if not existing.get(cve_id, False):
             event(
                 session,
                 row["vulnerability_id"],
                 "added_to_kev",
-                "first-observed",
+                "first-observed" if cve_id not in existing else "readded:" + row["catalog_version"],
                 "kev",
-                datetime.combine(row["date_added"], time(), tzinfo=UTC),
+                datetime.combine(row["date_added"], time(), tzinfo=UTC)
+                if cve_id not in existing
+                else datetime.now(UTC),
                 {
                     "date_added": row["date_added"].isoformat(),
                     "catalog_version": row["catalog_version"],
@@ -64,7 +71,31 @@ class KEVAdapter:
                     "notes": row.get("notes", ""),
                     "catalog_version": revision,
                     "record_hash": digest(row),
+                    "is_active": True,
+                    "removed_at": None,
                 }
+
+        def finish(session):
+            incoming = [row["cveID"] for row in feed["vulnerabilities"]]
+            removed = session.scalars(
+                select(KEVEntry).where(
+                    KEVEntry.is_active.is_(True), KEVEntry.vulnerability_id.not_in(incoming)
+                )
+            )
+            now = datetime.now(UTC)
+            for row in removed:
+                row.is_active = False
+                row.removed_at = now
+                event(
+                    session,
+                    row.vulnerability_id,
+                    "removed_from_kev",
+                    revision,
+                    "kev",
+                    now,
+                    {"catalog_version": revision, "source_url": KEV_URL},
+                    "P2",
+                )
 
         return ingest(
             engine,
@@ -76,4 +107,6 @@ class KEVAdapter:
             restart=restart,
             metadata={"catalog_count": feed["count"]},
             http=self.http,
+            finish=finish,
+            restart_on_revision_change=True,
         )

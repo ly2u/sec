@@ -19,6 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -47,10 +48,14 @@ class Vulnerability(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cvss: Mapped[float | None] = mapped_column(Float)
+    cvss_version: Mapped[str | None] = mapped_column(String(8))
+    cvss_vector: Mapped[str | None] = mapped_column(Text)
+    cvss_source: Mapped[str | None] = mapped_column(String(32))
+    cvss_metrics: Mapped[list] = mapped_column(DOCUMENT, default=list, nullable=False)
     severity: Mapped[str | None] = mapped_column(String(16))
     cwes: Mapped[list] = mapped_column(DOCUMENT, default=list, nullable=False)
     ssvc: Mapped[dict | None] = mapped_column(DOCUMENT)
-    cisa_kev: Mapped[bool] = mapped_column(
+    adp_kev_flag: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=false(), nullable=False
     )
     cisa_adp: Mapped[dict | None] = mapped_column(DOCUMENT)
@@ -116,6 +121,10 @@ class KEVEntry(Base):
     notes: Mapped[str] = mapped_column(Text, nullable=False)
     catalog_version: Mapped[str] = mapped_column(String(64), nullable=False)
     record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class EPSSScore(Base):
@@ -135,7 +144,10 @@ class EPSSScore(Base):
 
 class VulnerabilityEvent(Base):
     __tablename__ = "vulnerability_events"
-    __table_args__ = (Index("ix_events_time_priority", "happened_at", "priority"),)
+    __table_args__ = (
+        Index("ix_events_time_priority", "happened_at", "priority"),
+        Index("ix_events_public_time", "is_baseline", "happened_at"),
+    )
     id: Mapped[int] = mapped_column(IDENTITY, primary_key=True, autoincrement=True)
     vulnerability_id: Mapped[str] = mapped_column(
         ForeignKey("vulnerabilities.id", ondelete="CASCADE"), nullable=False, index=True
@@ -148,6 +160,9 @@ class VulnerabilityEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     priority: Mapped[str] = mapped_column(String(8), nullable=False)
+    is_baseline: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(DOCUMENT, nullable=False)
 
 
@@ -158,6 +173,9 @@ class IngestionState(Base):
     cursor: Mapped[dict] = mapped_column(DOCUMENT, default=dict, nullable=False)
     records_processed: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    has_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -81,12 +81,14 @@ def test_migration_roundtrip_matches_models(db, monkeypatch):
 def test_compose_resources_and_network_isolation():
     config = yaml.safe_load((ROOT / "deploy/compose.yaml").read_text())
     assert config["name"] == "secwatch-dev"
+    assert config["networks"]["db"] == {"internal": True}
+    assert "shared_buffers=1GB" in config["services"]["postgres"]["command"]
     assert config["networks"]["secwatch-edge"] == {"name": "secwatch-edge", "external": True}
     expected = {"postgres": ("4g", 2.0), "worker": ("2g", 1.5), "web": ("1g", 1.0)}
     for service, (memory, cpu) in expected.items():
         cfg = config["services"][service]
         assert (cfg["mem_limit"], cfg["cpus"]) == (memory, cpu)
-        assert cfg["networks"] == ["private"]
+        assert cfg["networks"] == (["db"] if service == "postgres" else ["db", "private"])
         if service != "web":
             assert "ports" not in cfg
     assert config["services"]["web"]["ports"] == ["127.0.0.1:18080:8000"]

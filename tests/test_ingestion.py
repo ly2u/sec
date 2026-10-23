@@ -83,7 +83,7 @@ def test_cisa_adp_and_stale_record(published, db):
         {"descriptions": [{"cweId": "CWE-506", "description": "Embedded malicious code"}]}
     ]
     newer = normalize(variant)
-    assert newer["cvss"] == 9.1 and newer["cisa_kev"] and "CWE-506" in newer["cwes"]
+    assert newer["cvss"] == 10 and newer["adp_kev_flag"] and "CWE-506" in newer["cwes"]
     with Session(db) as session, session.begin():
         apply_records(session, [variant])
     older = copy.deepcopy(published)
@@ -91,7 +91,7 @@ def test_cisa_adp_and_stale_record(published, db):
     with Session(db) as session, session.begin():
         apply_records(session, [older])
     with Session(db) as session:
-        assert session.get(Vulnerability, "CVE-2024-3094").cvss == 9.1
+        assert session.get(Vulnerability, "CVE-2024-3094").cvss == 10
 
 
 def test_committed_cursor_retries_interrupted_stream(db, published):

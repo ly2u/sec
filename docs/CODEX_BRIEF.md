@@ -42,7 +42,7 @@
 **阶段 0 结论（已确认，2026-10-23）**
 
 - 工作副本统一使用 `/opt/secwatch-dev`。在该目录重新 clone 仓库，然后删除 `/root/ly2u_SecWatch/sec` 这个临时副本，避免出现两份代码互相不一致。删除前先确认 `docs/host-survey.md` 已经复制过去。
-- 推送使用**仓库专属 deploy key**：在 VPS 上生成 ed25519 密钥，由站长把公钥添加到仓库的 Deploy keys 中并勾选写权限。不要使用账户级 token。
+- 推送凭据：站长通过 SSH agent 转发提供，机器上**不保存任何 GitHub 密钥**。remote 使用 SSH 地址（`git@github.com:ly2u/sec.git`）。推送前先用 `ssh-add -l` 检查 agent 是否可用；不可用时（站长没有连接、后台任务、定时任务等情况）**不要尝试其他凭据，也不要生成或配置任何密钥**，把提交保留在本地，并在汇报中写明"有 N 个提交待推送"。不得把 agent socket 暴露给任何容器。
 - 网络和资源上限按 ARCHITECTURE.md D6 第 1、1a 条执行。Compose 文件从一开始就要写好 `secwatch-edge` 外部网络的声明（开发环境中可以先不创建这个网络，用 profile 或覆盖文件控制），并设置资源上限。
 
 1. 按 PRD 第 12 节创建目录骨架，可以适当简化。需要包含：`apps/server`、`collector/adapters`、`scanner/`（Go）、`rules/products`、`migrations`、`deploy/`、`docs/`、`tests/`、`.github/`。

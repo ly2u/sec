@@ -195,3 +195,4 @@ footer a { color: var(--steel); }
 #lookup-again { margin: 1.2rem 0; }
 .tablewrap + p, table + p { margin-top: 0.6rem; }
 td.ver, td.nowrap, td[class^="status-"] { white-space: nowrap; }
+h1 + p { margin-top: 0.5rem; }

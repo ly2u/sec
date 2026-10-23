@@ -218,10 +218,20 @@ CVSS 只是其中一个维度。不得根据评分推断"可远程提权"之类�
    - **第二层，必做**：SSL 模式设为 Full (strict)，并使用 Cloudflare Origin Certificate；检查 `ly2u.com` 各子域名，凡指向本机且未开代理的记录都要处理掉。
    - **第三层，有条件时做**：源站防火墙的 80/443 端口只放行 Cloudflare IP 段。**前提是本机所有对外 443 站点都走 Cloudflare**，因为防火墙无法按域名区分流量。如果本机还有不走代理的站点，这一层就做不了，只能依靠前两层，并在汇报中注明。
    - **站长决定（2026-10-23）**：本机存在不走 Cloudflare 的服务，V0.1 **不实施第三层**，依靠第一、二层。若日后遭到针对源站的攻击，应急方案是更换 VPS IP，或把本站迁到单独 IP 并补上第三层。
-3. **Cloudflare 缓存规则**：
-   - `/cve/*`：边缘缓存 1 小时
-   - `/bundles/*`：文件名带哈希，可长期缓存
-   - `/api/*`：限速规则
+3. **缓存策略（防止用户拿到旧数据）**：源站必须对每类路径显式输出 `Cache-Control`，Cloudflare 缓存规则设为"遵循源站"。不要依赖 Cloudflare 的默认行为：它会按扩展名自动缓存 `.zst`、`.gz`、`.zip` 等文件。
+
+   | 路径 | 是否会变 | 源站 `Cache-Control` | 最大陈旧时间 |
+   |---|---|---|---|
+   | `/bundles/<发行版>.<哈希>.json.zst` 及签名 | 永不变（内容变化即换新文件名） | `public, max-age=31536000, immutable` | 0，不存在陈旧问题 |
+   | `/bundles/manifest.json`（唯一可变的入口） | 每次发布都会变 | `public, max-age=60, must-revalidate`，并带 `ETag` | ≤ 60 秒 |
+   | `/api/*` | 随数据变化 | `public, max-age=60`；`/api/v1/health` 用 `no-store` | ≤ 60 秒 |
+   | `/cve/*` 等页面 | 偶尔变化 | `public, max-age=300` | ≤ 5 分钟 |
+   | `/rss.xml` | 随事件变化 | `public, max-age=300` | ≤ 5 分钟 |
+
+   - worker 发布新数据包时的顺序：**先上传新的哈希文件，再更新 manifest**。这样任何时刻 manifest 指向的文件都一定存在。旧哈希文件保留 7 天后再清理，避免正在下载的用户读取失败。
+   - 扫描器请求 manifest 时带上 `If-None-Match`。数据没变时返回 304，几乎不消耗流量。
+   - `/api/*` 另外配置 Cloudflare 限速规则。
+   - 可选：发布后调用 Cloudflare API 清除 manifest 的缓存，把陈旧时间压到接近 0。这需要 API 令牌，V0.1 不做；60 秒的陈旧时间对每小时更新一次的数据来说可以忽略。
 4. **数据库与 worker 不暴露任何端口**。
 
 ---

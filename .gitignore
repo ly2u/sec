@@ -9,6 +9,7 @@ secrets/
 
 # 包含主机信息的文件，不得公开
 docs/host-survey.md
+docs/docker-cleanup-before.txt
 docs/*-private.md
 
 # 运行数据

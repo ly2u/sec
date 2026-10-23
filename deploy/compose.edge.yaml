@@ -1,0 +1,8 @@
+# Phase 5 only, after approval and explicit network creation.
+# No service except web joins this network. Never join ly-stack_default.
+services:
+  web:
+    networks:
+      private: {}
+      secwatch-edge:
+        aliases: [secwatch-web]

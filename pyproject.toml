@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ly2u-secwatch"
+version = "0.1.0"
+description = "LY2U SecWatch vulnerability intelligence foundation"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = [
+  "SQLAlchemy>=2.0,<2.1", "alembic>=1.16,<2", "psycopg[binary]>=3.2,<4",
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1",
+  "stream-unzip>=0.0.99,<1",
+]
+
+[project.scripts]
+secwatch-collector = "collector.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["apps*", "collector*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

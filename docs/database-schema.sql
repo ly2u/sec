@@ -99,7 +99,8 @@ CREATE TABLE public.ingestion_state (
     completed boolean NOT NULL,
     last_success_at timestamp with time zone,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    last_error text
+    last_error text,
+    has_completed boolean DEFAULT false NOT NULL
 );
 
 
@@ -119,7 +120,9 @@ CREATE TABLE public.kev_entries (
     ransomware character varying(32) NOT NULL,
     notes text NOT NULL,
     catalog_version character varying(64) NOT NULL,
-    record_hash character varying(64) NOT NULL
+    record_hash character varying(64) NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    removed_at timestamp with time zone
 );
 
 
@@ -138,12 +141,16 @@ CREATE TABLE public.vulnerabilities (
     severity character varying(16),
     cwes jsonb NOT NULL,
     ssvc jsonb,
-    cisa_kev boolean DEFAULT false NOT NULL,
+    adp_kev_flag boolean DEFAULT false NOT NULL,
     cisa_adp jsonb,
     source_url text,
     record_hash character varying(64),
     raw_record jsonb,
     ingested_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    cvss_version character varying(8),
+    cvss_vector text,
+    cvss_source character varying(32),
+    cvss_metrics jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT ck_vulnerability_cvss CHECK (((cvss IS NULL) OR ((cvss >= (0)::double precision) AND (cvss <= (10)::double precision)))),
     CONSTRAINT ck_vulnerability_status CHECK (((status)::text = ANY ((ARRAY['PUBLISHED'::character varying, 'REJECTED'::character varying, 'RESERVED'::character varying, 'UNKNOWN'::character varying])::text[])))
 );
@@ -173,7 +180,8 @@ CREATE TABLE public.vulnerability_events (
     happened_at timestamp with time zone NOT NULL,
     observed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     priority character varying(8) NOT NULL,
-    payload jsonb NOT NULL
+    payload jsonb NOT NULL,
+    is_baseline boolean DEFAULT true NOT NULL
 );
 
 
@@ -302,6 +310,13 @@ CREATE INDEX ix_affected_lookup ON public.affected_packages USING btree (ecosyst
 --
 
 CREATE INDEX ix_epss_scores_score_date ON public.epss_scores USING btree (score_date);
+
+
+--
+-- Name: ix_events_public_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_events_public_time ON public.vulnerability_events USING btree (is_baseline, happened_at);
 
 
 --

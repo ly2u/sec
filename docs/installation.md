@@ -19,7 +19,7 @@ web/worker 共用 `secwatch-dev:current`，以 UID 10001 运行，根文件系�
 
 OpenAPI 文档通过 `/openapi.json` 提供。按最新架构的无 JS／无外部资源要求，不启用默认 Swagger UI 或 Redoc 页面。
 
-三个服务仅加入项目网络 `secwatch-dev_private`。该网络允许 worker 访问公开情报源；它没有加入 `ly-stack_default`。开发阶段不创建 `secwatch-edge`，不改 Caddy。`deploy/compose.edge.yaml` 仅为阶段 5 获确认后的接入覆盖文件，只有 web 可加入外部 `secwatch-edge`，别名为 `secwatch-web`。
+postgres 只加入 `internal: true` 的项目网络 `secwatch-dev_db`，不直接访问外网。worker 和 web 同时加入 `db`、`private`；`private` 允许采集器访问公开情报源。三个服务均未加入 `ly-stack_default`。开发阶段不创建 `secwatch-edge`，不改 Caddy。`deploy/compose.edge.yaml` 仅为阶段 5 获确认后的接入覆盖文件，只有 web 可加入外部 `secwatch-edge`，别名为 `secwatch-web`。PostgreSQL 使用 `shared_buffers=1GB`。
 
 | 服务 | mem_limit | cpus | memswap_limit |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ OpenAPI 文档通过 `/openapi.json` 提供。按最新架构的无 JS／无外�
 
 ## 有上限的采集
 
-worker 默认只等待显式命令，不会后台导入全部数据。默认上限为 1000，`--limit` 必须为正数。本次验收未使用 `--all`。
+worker 默认只等待显式命令，不会后台导入全部数据。默认上限为 1000，`--limit` 必须为正数。阶段 1 使用样本验收；阶段 1.1 经站长授权执行 `--all` 全量导入，实测结果见 `capacity.md`。
 
 ```bash
 docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli cve-baseline --limit 1000
@@ -41,13 +41,23 @@ docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m c
 - CVE 基线从官方 Releases 元数据发现 ZIP，使用 `stream-unzip` 流式处理普通或嵌套 ZIP，不落盘解压。到达上限即关闭下载；不先下载完整基线。
 - 数据和记录偏移在同一事务中每 100 条提交。重跑相同命令会从已提交的记录偏移继续，因此下一次会处理后续记录。使用 `--restart --limit 1000` 可重放同一快照的前 1000 条，验证幂等性。
 - 断点恢复是记录级：网络中断时重新打开固定快照，重读并跳过已提交的记录，不是压缩 ZIP 的字节范围续传。失败批次整体回滚；已经提交的批次保留。
-- 未完成的快照若版本变化，会拒绝静默混用数据；应继续固定快照，或明确使用 `--restart`。
+- CVE 基线锁定 URL 和 revision，未完成时继续读取固定快照；显式切换快照仍需 `--restart`。KEV、EPSS 无法锁定历史 URL，未完成时若 revision 改变，会记录警告并自动从零重启，避免混用快照。
 - 增量使用官方 `cves/deltaLog.json`。第一次调用 `cve-delta` 必须显式给出 `--since <ISO UTC 时间>`，以后使用持久化水位。超过滚动日志覆盖窗口时明确报错，要求重建基线，不静默漏采。
 - EPSS 每次依据 FIRST 官方文档发现日更 CSV 地址，支持 `--url` 显式覆盖受允许的公开来源。保留评分日期和模型版本；旧日期不能覆盖新分数。仅在完整日快照处理完成后清理旧日期分数。
 - 429 和常见 5xx 最多重试 4 次，指数退避，遵守有上限的 `Retry-After`；每次重定向重新验证 HTTPS 和来源主机。
 - 仅 KEV/EPSS 出现的编号先建立 `UNKNOWN` 占位，不能假冒已公开 CVE。CVE 查询作用域只返回 `PUBLISHED`；REJECTED 保留拒绝原因，RESERVED 不进入公开结果。
+- 每个采集流首次完整导入前生成的事件全部为 `is_baseline=true`。`has_completed` 独立记录是否曾完成过导入，后续轮次中断或自动重启不会丢失这段历史。首页/RSS 共用 `visible_events()`，Telegram 共用 `telegram_events()`，均排除基线事件；实际页面和发送任务仍属于阶段 4。
+- 官方 KEV 身份只根据 JOIN `kev_entries` 且 `is_active=true` 判断，`adp_kev_flag` 仅保留 CISA ADP 原始事实。只有完整目录导入完成后，才将已撤回项标为非活跃、保留原记录并生成 P2 `removed_from_kev` 事件。
+- CVSS 保留全部评分及来源，主评分优先 CNA 3.1、CISA-ADP 3.1、CNA 4.0、CISA-ADP 4.0、3.0、2.0；严重度从主评分数值推导。优先级阈值按架构 D4 使用 CVSS 3.x。
+- 官方 delta 条目带有源端错误时，记录警告、继续处理其中可用的记录，并将条目保存在 `ingestion_state.cursor.warnings`，供后续核查。
 
-当前三种源都只是部分样本，不能当作完整漏洞数据库。全量导入需另行确认；执行前再次检查磁盘、资源和上游格式。
+全量导入显式使用 `--all`，与 `--limit` 互斥；执行前检查磁盘和负载。按 KEV、EPSS、CVE 顺序运行：
+
+```bash
+docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli kev --all
+docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli epss --all
+docker compose --env-file .env -f deploy/compose.yaml exec -T worker python -m collector.cli cve-baseline --all
+```
 
 ## 测试与迁移检查
 

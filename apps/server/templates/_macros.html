@@ -1,0 +1,33 @@
+{% macro pri(level) -%}
+<span class="pri {{ level }}">{{ level }}</span>
+{%- endmacro %}
+
+{% macro score(v) -%}
+{% if v.cvss is not none %}{{ "%.1f"|format(v.cvss) }}{% if v.cvss_version %} <span class="muted small">v{{ v.cvss_version }}</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}
+{%- endmacro %}
+
+{% macro vuln_table(rows, show_ranges=false, show_title=true) -%}
+<div class="tablewrap">
+<table>
+  <thead><tr>
+    <th>优先级</th><th>编号</th>
+    {% if show_title %}<th class="hide-sm">概要</th>{% endif %}
+    {% if show_ranges %}<th>受影响版本</th>{% endif %}
+    <th class="num">CVSS</th><th class="num">EPSS</th><th class="num hide-sm">公开日期</th>
+  </tr></thead>
+  <tbody>
+  {% for v in rows %}
+  <tr>
+    <td>{{ pri(v.priority) }}</td>
+    <td><a class="id" href="/cve/{{ v.id|urlencode }}">{{ v.id }}</a>{% if v.kev %} <span class="flag kev" title="CISA KEV：已确认在野利用">KEV</span>{% endif %}</td>
+    {% if show_title %}<td class="hide-sm">{{ v.title or "—" }}</td>{% endif %}
+    {% if show_ranges %}<td class="ver small">{% for r in v.ranges %}{{ r.text }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if v.more_ranges %}<br><span class="muted">另有 {{ v.more_ranges }} 个范围</span>{% endif %}</td>{% endif %}
+    <td class="num">{{ score(v) }}</td>
+    <td class="num">{{ v.epss|pct }}</td>
+    <td class="num hide-sm">{{ v.published or "—" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}

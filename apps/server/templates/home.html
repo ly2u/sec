@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_macros.html" import vuln_table, pri %}
+{% block lookup %}{% endblock %}
+{% block main %}
+<section class="hero">
+  <h1>你的服务器受这个漏洞影响吗？</h1>
+  <form action="/go" method="get" role="search">
+    <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号" autofocus>
+    <button type="submit">查看</button>
+  </form>
+  <p class="hint">输入 CVE、GHSA、DSA、USN 等编号，查看各发行版的修复状态和受影响的上游版本。</p>
+  <div class="check">
+    <p><strong>直接检查整台机器</strong>：扫描器只读运行，不修改系统，不上传任何数据。</p>
+<pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh
+sudo secwatch scan</code></pre>
+    <p class="small muted">支持 Debian、Ubuntu、Rocky、Alma、Alpine，也能识别宝塔、源码编译等非包管理安装的软件。<a href="/scanner">安装说明与校验方法</a></p>
+  </div>
+</section>
+
+<h2>最近 30 天新增的在野利用漏洞</h2>
+<p class="muted small">来自 CISA KEV 目录：美国网络安全局确认已被实际利用的漏洞。</p>
+{% if kev %}
+{{ vuln_table(kev) }}
+{% else %}
+<p class="muted">最近 30 天没有新增条目。</p>
+{% endif %}
+
+{% if events %}
+<h2>最新动态</h2>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>时间</th><th>级别</th><th>编号</th><th>事件</th></tr></thead>
+  <tbody>
+  {% for e in events %}
+  <tr>
+    <td class="small muted">{{ e.happened_at|when }}</td>
+    <td>{{ pri(e.priority) }}</td>
+    <td><a class="id" href="/cve/{{ e.vulnerability_id|urlencode }}">{{ e.vulnerability_id }}</a></td>
+    <td>{{ e.text }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<h2>按产品查看</h2>
+<ul class="products">
+{% for slug, rule in products.items() %}
+  <li><a href="/product/{{ slug }}">{{ rule.name }}</a><span class="muted small">{{ counts[slug].total }} 个漏洞{% if counts[slug].kev %}，{{ counts[slug].kev }} 个在野利用{% endif %}</span></li>
+{% endfor %}
+</ul>
+
+{% if freshness %}
+<h2>数据更新时间</h2>
+<div class="tablewrap">
+<table class="small">
+  <tbody>
+  {% for f in freshness %}<tr><td>{{ f.source }}</td><td class="muted">{{ f.last_success|when }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

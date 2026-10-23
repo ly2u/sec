@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}关于与数据来源 - LY2U SecWatch{% endblock %}
+{% block main %}
+<div class="prose">
+<h1>关于 LY2U SecWatch</h1>
+<p>LY2U SecWatch 汇总公开的漏洞情报，并提供一个只读的扫描器，帮助 VPS 和自建服务器的管理员回答三个问题：我的机器受不受影响？该升级到哪个版本？先修哪个？</p>
+<p>本站和扫描器的全部代码在 <a href="https://github.com/ly2u/sec">github.com/ly2u/sec</a> 开源，采用 Apache-2.0 许可证。</p>
+
+<h2>数据来源</h2>
+<ul class="plain">
+  <li><a href="https://github.com/CVEProject/cvelistV5">CVE Program（cvelistV5）</a>：漏洞描述、CVSS 评分、受影响版本，含 CISA 的 Vulnrichment 补充数据。</li>
+  <li><a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">CISA KEV</a>：已确认被在野利用的漏洞目录。</li>
+  <li><a href="https://www.first.org/epss/">FIRST EPSS</a>：漏洞在未来 30 天内被利用的概率估计。</li>
+  <li><a href="https://osv.dev/">OSV</a>：Debian、Ubuntu、Alpine、Rocky Linux、AlmaLinux 的安全公告与修复版本。</li>
+  <li><a href="https://github.com/nodejs/security-wg">Node.js Security WG</a>：Node.js 自身及其内置依赖的漏洞。</li>
+</ul>
+<p>各来源的许可与署名要求见仓库中的 <a href="https://github.com/ly2u/sec/blob/main/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES.md</a>。本站不修改原始数据的含义；如有出入，以原始来源为准。</p>
+
+{% if freshness %}
+<h2>最近一次成功同步</h2>
+<div class="tablewrap">
+<table class="small">
+  <tbody>
+  {% for f in freshness %}<tr><td>{{ f.source }}</td><td class="muted">{{ f.last_success|when }}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<h2>局限</h2>
+<p>漏洞数据只覆盖已公开、已编号的问题。0day、未分配编号的问题、以及数据源没有覆盖的软件，本站和扫描器都无法发现。“未列出”不等于“安全”。</p>
+</div>
+{% endblock %}

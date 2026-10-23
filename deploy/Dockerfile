@@ -15,6 +15,7 @@ COPY deploy /app/deploy
 COPY tests /app/tests
 COPY keys /app/keys
 COPY rules /app/rules
+COPY scanner/install.sh /app/scanner/install.sh
 RUN pip install --no-cache-dir --no-deps --no-build-isolation .
 RUN mkdir -p /bundles && chown 10001:10001 /bundles
 USER 10001:10001

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{% if state == "missing" %}未收录 {{ value }}{% else %}无法识别的编号{% endif %} - LY2U SecWatch{% endblock %}
+{% block main %}
+<div class="prose">
+{% if state == "missing" %}
+<h1>没有找到 <span class="id">{{ value }}</span></h1>
+<p>本站还没有收录这个编号。可能是刚刚公开、尚未同步（CVE 记录每小时同步一次），也可能编号有误。</p>
+{% if value.startswith("CVE-") %}<p><a href="https://www.cve.org/CVERecord?id={{ value|urlencode }}" rel="nofollow noopener">在 cve.org 上查看 {{ value }}</a></p>{% endif %}
+{% else %}
+<h1>无法识别这个编号</h1>
+{% if query %}<p>你输入的是 <code>{{ query }}</code>。</p>{% endif %}
+<p>编号查询只接受完整编号，例如 <code>CVE-2024-3094</code>、<code>GHSA-xxxx-xxxx-xxxx</code>、<code>DSA-5678-1</code>、<code>USN-6800-1</code>。本站不提供关键词搜索，按软件查看请从下面的产品列表进入。</p>
+{% endif %}
+<form class="lookup-mini" action="/go" method="get" role="search" id="lookup-again">
+  <input type="text" name="id" value="{{ query }}" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号">
+  <button type="submit">查看</button>
+</form>
+</div>
+<h2>按产品查看</h2>
+<ul class="products">
+{% for slug, rule in products.items() %}<li><a href="/product/{{ slug }}">{{ rule.name }}</a></li>{% endfor %}
+</ul>
+{% endblock %}

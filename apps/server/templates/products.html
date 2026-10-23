@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}产品 - LY2U SecWatch{% endblock %}
+{% block main %}
+<h1>产品</h1>
+<p class="prose muted">这些软件常见于 VPS 和自建服务器。扫描器能在宝塔、源码编译、官方二进制等安装方式下识别它们的版本，并对照这里的漏洞数据。</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>产品</th><th class="num">漏洞总数</th><th class="num">近 90 天</th><th class="num">在野利用</th></tr></thead>
+  <tbody>
+  {% for slug, rule in products.items() %}
+  <tr>
+    <td><a href="/product/{{ slug }}"><strong>{{ rule.name }}</strong></a></td>
+    <td class="num">{{ counts[slug].total }}</td>
+    <td class="num">{{ counts[slug].recent }}</td>
+    <td class="num">{% if counts[slug].kev %}<span class="pri P0">{{ counts[slug].kev }}</span>{% else %}0{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="small muted">想增加新产品？产品规则在 <a href="https://github.com/ly2u/sec/tree/main/rules/products">rules/products</a>，欢迎提交。</p>
+{% endblock %}

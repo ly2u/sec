@@ -9,6 +9,7 @@ COPY pyproject.toml alembic.ini /app/
 COPY apps /app/apps
 COPY collector /app/collector
 COPY migrations /app/migrations
+COPY deploy /app/deploy
 COPY tests /app/tests
 RUN pip install --no-cache-dir --no-deps --no-build-isolation .
 USER 10001:10001

@@ -111,7 +111,7 @@
 - Ubuntu Pro 修复在 `requires_subscription` 和逐修复项 `fixes[].requires_subscription` 中明确标记。扫描器遇到这类修复时提示“修复仅在 Ubuntu Pro 中提供”，不得输出普通升级提示。FIPS、Realtime、Livepatch 专用生态不混入标准发行版数据包。
 - `coverage.missing_package_means` 固定为 `unknown`；包名不在数据包中不能被解释为“安全”。
 - 文件名带内容哈希：`bundles/debian-12.<sha256前12位>.json.zst` + `.minisig`。`manifest.json` 指向最新文件，并通过 Cloudflare 长期缓存。
-- 同时发布到 GitHub Releases 作为镜像。
+- **GitHub Releases 镜像推迟到 V0.2**：如果由服务器直接上传，就需要在 VPS 上存放 GitHub 令牌，违反"服务器不持有凭据"的原则。V0.2 改由 GitHub Actions 定时从 `sec.ly2u.com` 拉取已签名的数据包，再发布到 Releases。Actions 只做搬运，签名校验由扫描器负责，所以镜像是否可信不依赖 Actions 本身。
 
 ---
 
@@ -120,6 +120,11 @@
 ### L1 发行版包
 
 使用 D2 的数据包，正确处理回移植，可以给出 `CONFIRMED_AFFECTED` / `FIXED` 结论。
+
+**"包不在数据包里"的含义取决于包的来源**（阶段 3 实现）：
+- 包来自**发行版官方仓库**：没有对应条目，表示"发行版数据中没有已知漏洞"。这类包只计数、不逐条列出，也不称之为"安全"。
+- 包来自**第三方仓库**（如 nginx.org、Docker 官方仓库、NodeSource、PHP 的 sury 源）：发行版数据不覆盖这些包，结论一律为 `UNKNOWN`，然后交给 L2 按上游版本范围判断。这类包正是 nginx、PHP、Node 高危漏洞的重灾区。包的来源通过 apt 的软件源信息（`apt-cache policy` 或 `/var/lib/apt/lists`）、RPM 的 vendor/仓库字段等进行判定；判定不了时按第三方处理。
+- **Ubuntu 合并规则**：同一个 CVE 如果标准通道显示"未修复"，而 Pro 通道已有修复，报告应写成"修复仅在 Ubuntu Pro 中提供"，而不是两条互相矛盾的结论。
 
 `unfixed` / `wont_fix` 状态需要单独说明，例如："已知受影响，发行版暂未修复或不计划修复"，并给出缓解建议。不能简单输出"请升级"，因为根本没有可升级的版本。
 

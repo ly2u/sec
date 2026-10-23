@@ -10,6 +10,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # 数据包签名与篡改测试需要真实的 minisign 二进制（生产镜像中由 Dockerfile 安装）
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign && minisign -v
       - run: pip install -r requirements.lock
       - run: pip install --no-deps --no-build-isolation -e .
       - run: ruff check . && ruff format --check .

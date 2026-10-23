@@ -14,6 +14,7 @@ from apps.server.models import ScheduledTask, TaskRun
 from collector.adapters.cvelist import CVEAdapter
 from collector.adapters.epss import EPSSAdapter
 from collector.adapters.kev import KEVAdapter
+from collector.adapters.nodejs import NodejsAdapter
 from collector.adapters.osv import OSVAdapter
 from collector.bundles import generate
 from collector.distros import BASES, RELEASES
@@ -22,7 +23,7 @@ from collector.store import upsert
 
 logger = logging.getLogger(__name__)
 LOCK_ID = 0x5345435741544348
-TASKS = {"kev": 3600, "cve:delta": 3600, "osv": 3600, "epss": 86400}
+TASKS = {"kev": 3600, "cve:delta": 3600, "osv": 3600, "epss": 86400, "nodejs": 21600}
 
 
 def utc(value):
@@ -71,6 +72,8 @@ def perform(engine, task):
             result = EPSSAdapter(http).run(engine, limit=None)
         elif task == "cve:delta":
             result = CVEAdapter(http).delta(engine, limit=None)
+        elif task == "nodejs":
+            result = NodejsAdapter(http).run(engine)
         else:
             result = {base: OSVAdapter(http).delta(engine, base, limit=None) for base in BASES}
         changed = (
@@ -83,7 +86,7 @@ def perform(engine, task):
             if changed
             else {
                 "rebuilt": [],
-                "bundles": sum(len(releases) for releases in RELEASES.values()),
+                "bundles": sum(len(releases) for releases in RELEASES.values()) + 1,
                 "skipped": "feed-unchanged",
             }
         )

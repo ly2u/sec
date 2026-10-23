@@ -2,21 +2,8 @@
   "slug": "node",
   "name": "Node.js",
   "identity": {
-    "cve_affected": [
-      {
-        "vendor": "nodejs",
-        "product": "node"
-      },
-      {
-        "vendor": "Node.js",
-        "product": "Node.js"
-      },
-      {
-        "vendor": "nodejs",
-        "product": "Node.js"
-      }
-    ],
-    "notes": "仅 Node.js 运行时本身，不含 npm 依赖"
+    "cve_affected": [],
+    "notes": "Node.js 运行时的漏洞来自 Node.js 安全工作组数据库（含 Brotli 等内置依赖的漏洞）；CVE 记录中厂商填写的范围不统一，不使用"
   },
   "detect": {
     "binaries": [

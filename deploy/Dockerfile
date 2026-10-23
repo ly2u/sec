@@ -14,6 +14,7 @@ COPY migrations /app/migrations
 COPY deploy /app/deploy
 COPY tests /app/tests
 COPY keys /app/keys
+COPY rules /app/rules
 RUN pip install --no-cache-dir --no-deps --no-build-isolation .
 RUN mkdir -p /bundles && chown 10001:10001 /bundles
 USER 10001:10001

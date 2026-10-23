@@ -6,17 +6,9 @@
       {
         "vendor": "F5",
         "product": "NGINX Open Source"
-      },
-      {
-        "vendor": "F5",
-        "product": "NGINX Plus"
-      },
-      {
-        "vendor": "nginx",
-        "product": "nginx"
       }
     ],
-    "notes": "nginx 核心版本；OpenResty 按其内置的 nginx 核心版本判断"
+    "notes": "只匹配开源版；NGINX Plus 使用另一套版本号，不得混入。nginx-ui、ingress-nginx 等是不同产品"
   },
   "detect": {
     "binaries": [

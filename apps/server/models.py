@@ -124,6 +124,22 @@ class OSVAdvisory(Base):
     raw_record: Mapped[dict] = mapped_column(DOCUMENT, nullable=False)
 
 
+class UpstreamAdvisory(Base):
+    """Upstream product version ranges for scanner layer L2 (see collector/upstream.py)."""
+
+    __tablename__ = "upstream_advisories"
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    product: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    vulnerability_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    cve_ids: Mapped[list] = mapped_column(DOCUMENT, default=list, nullable=False)
+    ranges: Mapped[list] = mapped_column(DOCUMENT, default=list, nullable=False)
+    severity: Mapped[str | None] = mapped_column(String(16))
+    ref: Mapped[str] = mapped_column(Text, nullable=False)
+    record_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ScheduledTask(Base):
     __tablename__ = "scheduled_tasks"
     name: Mapped[str] = mapped_column(String(32), primary_key=True)

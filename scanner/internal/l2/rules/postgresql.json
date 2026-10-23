@@ -4,11 +4,15 @@
   "identity": {
     "cve_affected": [
       {
+        "vendor": "n/a",
+        "product": "PostgreSQL"
+      },
+      {
         "vendor": "PostgreSQL",
         "product": "PostgreSQL"
       },
       {
-        "vendor": "n/a",
+        "vendor": "PostgreSQL Global Development Group",
         "product": "PostgreSQL"
       }
     ]

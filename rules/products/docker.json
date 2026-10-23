@@ -10,12 +10,9 @@
       {
         "vendor": "Docker",
         "product": "Docker Engine"
-      },
-      {
-        "vendor": "docker",
-        "product": "docker"
       }
-    ]
+    ],
+    "notes": "不含 Docker Desktop"
   },
   "detect": {
     "binaries": [],

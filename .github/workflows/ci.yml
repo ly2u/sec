@@ -14,8 +14,15 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign && minisign -v
       - run: pip install -r requirements.lock
       - run: pip install --no-deps --no-build-isolation -e .
-      - run: ruff check . && ruff format --check .
-      - run: pytest -q
+      - run: ruff check --output-format=github . && ruff format --check .
+      - name: pytest
+        run: |
+          set -o pipefail
+          pytest -q -rfE --tb=short 2>&1 | tee pytest.log || {
+            grep -E "^(FAILED|ERROR) " pytest.log | head -10 | sed 's/^/::error::/'
+            grep -E "^E  " pytest.log | head -10 | sed 's/^/::error title=detail::/'
+            exit 1
+          }
   scanner:
     runs-on: ubuntu-latest
     steps:

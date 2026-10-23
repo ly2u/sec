@@ -6,13 +6,8 @@
       {
         "vendor": "MariaDB",
         "product": "MariaDB"
-      },
-      {
-        "vendor": "mariadb",
-        "product": "mariadb"
       }
-    ],
-    "notes": "MariaDB 相关 CVE 部分沿用 Oracle MySQL 编号；也可能由 mysqld 规则的 variants 识别出来"
+    ]
   },
   "detect": {
     "binaries": [

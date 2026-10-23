@@ -11,6 +11,7 @@ import httpx
 ALLOWED_HOSTS = {
     "api.github.com",
     "github.com",
+    "codeload.github.com",
     "raw.githubusercontent.com",
     "release-assets.githubusercontent.com",
     "objects.githubusercontent.com",

@@ -6,13 +6,8 @@
       {
         "vendor": "OpenBSD",
         "product": "OpenSSH"
-      },
-      {
-        "vendor": "openssh",
-        "product": "openssh"
       }
-    ],
-    "notes": "大量 OpenSSH CVE 的厂商字段为 n/a，需结合 CPE 或人工维护"
+    ]
   },
   "detect": {
     "binaries": [

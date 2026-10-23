@@ -15,11 +15,18 @@ import zstandard
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from apps.server.models import AffectedPackage, EPSSScore, IngestionState, KEVEntry, Vulnerability
+from apps.server.models import (
+    AffectedPackage,
+    EPSSScore,
+    IngestionState,
+    KEVEntry,
+    UpstreamAdvisory,
+    Vulnerability,
+)
 from collector.distros import PACKAGE_KEYS, PACKAGE_NAME, RELEASES, VERSION
 
 FILENAME = re.compile(
-    r"(?:debian|ubuntu|rocky|alma|alpine)-[\d.]+\.[a-f0-9]{12}\.json\.zst(?:\.minisig)?"
+    r"(?:debian|ubuntu|rocky|alma|alpine|upstream)-[\d.]+\.[a-f0-9]{12}\.json\.zst(?:\.minisig)?"
 )
 
 
@@ -91,17 +98,9 @@ def urgency(metadata):
     return value if re.fullmatch(r"[a-z][a-z -]{0,31}", value) else None
 
 
-def bundle_entries(session, distro, release):
-    """Yield validated entries in package order without retaining a bundle in memory."""
-    # Explicit active-KEV JOIN: ADP flags never determine membership.
+def enrichment_for(session, ids):
+    """CVE facts (status, CVSS, EPSS, active KEV) keyed by CVE id."""
     enrichment = {}
-    ids = set()
-    scope = (AffectedPackage.distro == distro, AffectedPackage.release == release)
-    metadata = session.scalars(
-        select(AffectedPackage.source_metadata).where(*scope).execution_options(yield_per=1000)
-    )
-    for value in metadata:
-        ids.update(value.get("cve_ids", []))
     keys = sorted(ids)
     for offset in range(0, len(keys), 2000):
         found = session.execute(
@@ -119,6 +118,91 @@ def bundle_entries(session, distro, release):
         ).all()
         for r in found:
             enrichment[r.id] = r
+    return enrichment
+
+
+UPSTREAM_EVENT = re.compile(r"[0-9][0-9A-Za-z.+~_-]{0,63}")
+
+
+def upstream_entries(session):
+    """Yield (product, entry) for scanner layer L2, in product order."""
+    rows = session.scalars(
+        select(UpstreamAdvisory).order_by(UpstreamAdvisory.product, UpstreamAdvisory.id)
+    ).all()
+    enrichment = enrichment_for(session, {c for r in rows for c in r.cve_ids})
+    for row in rows:
+        if not PACKAGE_NAME.fullmatch(row.product):
+            raise ValueError("Unsafe product slug")
+        parsed = urlsplit(row.ref)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Unsafe reference URL")
+        ranges = []
+        for r in row.ranges:
+            if r.get("type") != "UPSTREAM":
+                raise ValueError("Upstream ranges must be UPSTREAM")
+            events = []
+            for e in r["events"]:
+                ((kind, value),) = e.items()
+                if kind not in ("introduced", "fixed", "last_affected", "limit") or not (
+                    value == "0" or UPSTREAM_EVENT.fullmatch(value)
+                ):
+                    raise ValueError("Unsafe upstream version event")
+                events.append({kind: value})
+            ranges.append({"type": "UPSTREAM", "events": events})
+        facts = [enrichment[c] for c in row.cve_ids if c in enrichment]
+        if row.cve_ids and facts and all(f.status == "REJECTED" for f in facts):
+            continue
+        published = [f for f in facts if f.status == "PUBLISHED"]
+        scores = [f.cvss for f in published if f.cvss is not None]
+        selected = max(published, key=lambda f: f.cvss if f.cvss is not None else -1, default=None)
+        severity = selected.severity if selected and selected.severity else None
+        if not severity and row.severity:
+            severity = row.severity.upper()
+        fixes = [
+            {"version": e["fixed"], "requires_subscription": False}
+            for r in ranges
+            for e in r["events"]
+            if "fixed" in e
+        ]
+        yield (
+            row.product,
+            {
+                "id": row.cve_ids[0] if len(row.cve_ids) == 1 else row.id,
+                "advisory_id": row.id,
+                "aliases": [],
+                "cve_ids": list(row.cve_ids),
+                "ecosystem": "upstream:" + row.product,
+                "status": "fixed" if fixes else "unfixed",
+                "fixed_version": None,
+                "ranges": ranges,
+                "requires_subscription": False,
+                "fixes": fixes,
+                "severity": severity,
+                "cvss": max(scores) if scores else None,
+                "kev": any(f.is_active is True for f in published),
+                "epss": max((float(f.epss) for f in published if f.epss is not None), default=None),
+                "ref": row.ref,
+                "urgency": None,
+                "source": row.source,
+            },
+        )
+
+
+def package_key(distro):
+    return "product" if distro == "upstream" else PACKAGE_KEYS[distro]
+
+
+def bundle_entries(session, distro, release):
+    """Yield validated entries in package order without retaining a bundle in memory."""
+    # Explicit active-KEV JOIN: ADP flags never determine membership.
+    ids = set()
+    scope = (AffectedPackage.distro == distro, AffectedPackage.release == release)
+    metadata = session.scalars(
+        select(AffectedPackage.source_metadata).where(*scope).execution_options(yield_per=1000)
+    )
+    for value in metadata:
+        ids.update(value.get("cve_ids", []))
+    enrichment = enrichment_for(session, ids)
     rows = session.execute(
         select(
             AffectedPackage.vulnerability_id,
@@ -211,7 +295,7 @@ def write_payload(session, path, distro, release, generated_at, sources):
     fingerprint = hashlib.sha256()
     fingerprint_update(
         fingerprint,
-        {"schema": 1, "distro": distro, "release": release, "package_key": PACKAGE_KEYS[distro]},
+        {"schema": 1, "distro": distro, "release": release, "package_key": package_key(distro)},
     )
     with path.open("wb") as output:
         os.fchmod(output.fileno(), 0o644)
@@ -220,11 +304,16 @@ def write_payload(session, path, distro, release, generated_at, sources):
         output.write(b',"release":')
         output.write(canonical(release))
         output.write(b',"package_key":')
-        output.write(canonical(PACKAGE_KEYS[distro]))
+        output.write(canonical(package_key(distro)))
         output.write(b',"generated_at":')
         output.write(canonical(generated_at))
         output.write(b',"source_packages":{')
-        for package_name, entry in bundle_entries(session, distro, release):
+        entries = (
+            upstream_entries(session)
+            if distro == "upstream"
+            else bundle_entries(session, distro, release)
+        )
+        for package_name, entry in entries:
             if package_name != current_package:
                 if current_package is not None:
                     output.write(b"]")
@@ -308,7 +397,8 @@ def generate(
             for r in source_states
             if r.completed and not r.source.startswith("cve:baseline")
         }
-        for distro, releases in RELEASES.items():
+        # "upstream-1" carries layer-L2 product ranges; schema version 1.
+        for distro, releases in [*RELEASES.items(), ("upstream", ["1"])]:
             for release in releases:
                 slug = f"{distro}-{release}"
                 payload_fd, payload_tmp = tempfile.mkstemp(prefix=".pending-payload-", dir=output)

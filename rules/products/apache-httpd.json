@@ -6,6 +6,14 @@
       {
         "vendor": "Apache Software Foundation",
         "product": "Apache HTTP Server"
+      },
+      {
+        "vendor": "Apache",
+        "product": "Apache HTTP Server"
+      },
+      {
+        "vendor": "n/a",
+        "product": "Apache HTTP Server"
       }
     ]
   },

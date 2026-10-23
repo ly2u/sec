@@ -11,6 +11,7 @@ from apps.server.models import Vulnerability
 from collector.cvss import assessments
 from collector.ingestion import ingest, state_for
 from collector.store import digest, event, timestamp, upsert
+from collector.upstream import sync_cve
 
 CVE_ID = re.compile(r"CVE-\d{4}-\d{4,}")
 RELEASES = "https://api.github.com/repos/CVEProject/cvelistV5/releases?per_page=5"
@@ -171,6 +172,8 @@ def apply_records(session, records):
         existing[row["id"]] = row
     # One lookup and one upsert per batch; avoid per-record round trips on the full corpus.
     upsert(session, Vulnerability, list(pending.values()), ["id"])
+    # Layer-L2 product ranges are derived at ingest so bundles never rescan the corpus.
+    sync_cve(session, [row["raw_record"] for row in pending.values()])
     for values in events:
         event(session, *values)
 

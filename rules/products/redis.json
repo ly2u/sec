@@ -6,10 +6,6 @@
       {
         "vendor": "redis",
         "product": "redis"
-      },
-      {
-        "vendor": "Redis",
-        "product": "Redis"
       }
     ]
   },

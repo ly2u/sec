@@ -32,6 +32,10 @@ def main():
     commands.add_parser("status")
     commands.add_parser("worker", help="Run the PostgreSQL-locked persistent scheduler")
     commands.add_parser("bundles", help="Publish changed signed distro bundles")
+    commands.add_parser("nodejs", help="Import the Node.js security-wg core database")
+    commands.add_parser(
+        "upstream-backfill", help="Derive L2 product ranges from all stored CVE records once"
+    )
     for name in ("cve-baseline", "cve-delta", "kev", "epss", "osv-baseline", "osv-delta"):
         command = commands.add_parser(name)
         size = command.add_mutually_exclusive_group()
@@ -64,6 +68,20 @@ def main():
         from collector.bundles import generate
 
         print(json.dumps(generate(engine)))
+        return
+    if args.command == "nodejs":
+        from collector.adapters.nodejs import NodejsAdapter
+
+        http = FeedHTTP()
+        try:
+            print(json.dumps(NodejsAdapter(http).run(engine)))
+        finally:
+            http.close()
+        return
+    if args.command == "upstream-backfill":
+        from collector.upstream import backfill
+
+        print(json.dumps(backfill(engine)))
         return
     if args.command == "status":
         with Session(engine) as session:

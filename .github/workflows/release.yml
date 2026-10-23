@@ -1,0 +1,89 @@
+# Publishes a scanner release when a tag like v0.1.0 is pushed.
+#
+# Requires keys/release-signing.pub in the repository and the matching minisign
+# secret key (generated with `minisign -G -W`) in the repository secret
+# RELEASE_MINISIGN_KEY. The key exists only there and with the maintainer.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+concurrency: release
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: scanner/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+      - name: Check tag and key
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::tag must look like v1.2.3 or v1.2.3-rc.1"; exit 1; }
+          [ -f keys/release-signing.pub ] || { echo "::error::keys/release-signing.pub is missing"; exit 1; }
+      - name: Verify dependencies and test
+        working-directory: scanner
+        run: |
+          go mod download && go mod verify
+          go vet ./...
+          go test ./...
+      - name: Build
+        shell: bash
+        working-directory: scanner
+        run: |
+          mkdir -p ../dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.Version=$GITHUB_REF_NAME" -o ../dist/secwatch-linux-$arch ./cmd/secwatch
+          done
+          go build -o "$RUNNER_TEMP/sigtool" ./internal/tools/sigtool
+          cp install.sh ../dist/install.sh
+          cp ../keys/release-signing.pub ../dist/secwatch-release.pub
+          cd ../dist && sha256sum secwatch-linux-amd64 secwatch-linux-arm64 install.sh > SHA256SUMS
+          ./secwatch-linux-amd64 version | grep -qxF "secwatch $GITHUB_REF_NAME"
+      - name: Installer embeds the release key
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/sigtool" pubinfo -pub keys/release-signing.pub > "$RUNNER_TEMP/consts"
+          while IFS= read -r line; do
+            grep -qxF "$line" scanner/install.sh || { echo "::error::install.sh does not embed keys/release-signing.pub"; exit 1; }
+          done < "$RUNNER_TEMP/consts"
+      - name: Sign
+        shell: bash
+        env:
+          RELEASE_MINISIGN_KEY: ${{ secrets.RELEASE_MINISIGN_KEY }}
+        run: |
+          [ -n "$RELEASE_MINISIGN_KEY" ] || { echo "::error::repository secret RELEASE_MINISIGN_KEY is not set"; exit 1; }
+          umask 077
+          printf '%s\n' "$RELEASE_MINISIGN_KEY" > "$RUNNER_TEMP/release.key"
+          minisign -S -s "$RUNNER_TEMP/release.key" -m dist/SHA256SUMS \
+            -t "secwatch release=$GITHUB_REF_NAME file=SHA256SUMS" < /dev/null
+          rm -f "$RUNNER_TEMP/release.key"
+          minisign -Vm dist/SHA256SUMS -p keys/release-signing.pub
+      - name: Installer accepts this release and refuses tampered copies
+        run: scanner/testdata/install/run.sh dist scanner/install.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/sigtool"
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/secwatch-linux-amd64
+            dist/secwatch-linux-arm64
+            dist/install.sh
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=()
+          [[ "$GITHUB_REF_NAME" == *-* ]] && pre=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            --title "SecWatch $GITHUB_REF_NAME" "${pre[@]}" \
+            dist/secwatch-linux-amd64 dist/secwatch-linux-arm64 dist/install.sh \
+            dist/secwatch-release.pub dist/SHA256SUMS dist/SHA256SUMS.minisig

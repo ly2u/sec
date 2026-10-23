@@ -50,3 +50,30 @@ jobs:
           ../dist/secwatch version
       - name: Real-distro container tests
         run: scanner/testdata/integration/run.sh dist/secwatch dist/mkbundle
+      - name: Installer
+        shell: bash
+        run: |
+          shellcheck -s sh -S warning scanner/install.sh
+          (cd scanner && go build -o ../dist/sigtool ./internal/tools/sigtool)
+          # Once the release key exists, install.sh must embed exactly that key.
+          if [ -f keys/release-signing.pub ]; then
+            dist/sigtool pubinfo -pub keys/release-signing.pub > "$RUNNER_TEMP/release-consts"
+            while IFS= read -r line; do
+              grep -qxF "$line" scanner/install.sh || { echo "::error title=installer::install.sh does not embed keys/release-signing.pub"; exit 1; }
+            done < "$RUNNER_TEMP/release-consts"
+          else
+            echo "::warning title=installer::keys/release-signing.pub not added yet; releases are blocked until it is"
+          fi
+          # Full round trip with a throwaway key made and used by the real minisign CLI.
+          T="$RUNNER_TEMP/install"; mkdir -p "$T/dist"
+          v="ci-${GITHUB_SHA::7}"
+          cp dist/secwatch "$T/dist/secwatch-linux-amd64"
+          minisign -G -W -p "$T/test.pub" -s "$T/test.key" > /dev/null
+          dist/sigtool pubinfo -pub "$T/test.pub" > "$T/consts"
+          . "$T/consts"
+          sed -e "s|^KEY_ID=.*|KEY_ID='$KEY_ID'|" -e "s|^KEY_ID_RAW=.*|KEY_ID_RAW='$KEY_ID_RAW'|" \
+              -e "s|^MINISIGN_PUB=.*|MINISIGN_PUB='$MINISIGN_PUB'|" -e "s|^PUB_PEM=.*|PUB_PEM='$PUB_PEM'|" \
+              scanner/install.sh > "$T/install.sh"
+          (cd "$T/dist" && sha256sum secwatch-linux-amd64 > SHA256SUMS)
+          minisign -S -s "$T/test.key" -m "$T/dist/SHA256SUMS" -t "secwatch release=$v file=SHA256SUMS" < /dev/null
+          scanner/testdata/install/run.sh "$T/dist" "$T/install.sh" "$v" dist/sigtool

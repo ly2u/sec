@@ -6,7 +6,9 @@ import sys
 report = json.load(open(sys.argv[1]))
 executed = sys.argv[2] == "yes"
 errors = []
-l2 = {(f["package"], f["installed_version"]): f for f in report["findings"] if f.get("layer") == "L2"}
+l2 = {
+    (f["package"], f["installed_version"]): f for f in report["findings"] if f.get("layer") == "L2"
+}
 want = {("nginx", "1.28.0"): "1.30.6", ("OpenSSL", "1.1.1w"): "3.0.18", ("PHP", "8.3.10"): "8.3.36"}
 for key, fix in want.items():
     f = l2.get(key)

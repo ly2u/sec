@@ -185,6 +185,31 @@ def test_adp_kev_flag_is_not_catalog_membership(db, published):
         assert list(session.scalars(kev_vulnerabilities())) == []
 
 
+def test_migrated_cvss_backfill_replays_saved_record_without_losing_newer_data(db, published):
+    from collector.adapters.cvelist import apply_records
+
+    with Session(db) as session, session.begin():
+        apply_records(session, [published])
+        row = session.get(Vulnerability, "CVE-2024-3094")
+        row.cvss_version = row.cvss_vector = row.cvss_source = None
+        row.cvss_metrics = []
+    older = copy.deepcopy(published)
+    older["cveMetadata"]["dateUpdated"] = "2024-01-01T00:00:00Z"
+    older["containers"]["cna"]["descriptions"] = [{"lang": "en", "value": "stale"}]
+    with Session(db) as session, session.begin():
+        apply_records(session, [older])
+    with Session(db) as session, session.begin():
+        row = session.get(Vulnerability, "CVE-2024-3094")
+        assert row.raw_record == published and row.cvss_version is None
+        apply_records(session, [row.raw_record])
+    with Session(db) as session:
+        row = session.get(Vulnerability, "CVE-2024-3094")
+        assert row.raw_record == published
+        assert row.cvss_version == "3.1" and row.cvss_source == "cna"
+        assert row.cvss_vector and row.cvss_metrics
+    assert event_counts(db) == (0, 0)
+
+
 def test_kev_removal_only_after_complete_snapshot_retains_history_and_is_p2(db):
     feed = kev_feed(2)
     adapter = KEVAdapter(mock_http(lambda _: httpx.Response(200, json=feed)))

@@ -184,6 +184,8 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 		case f.Status == match.Unknown:
 		case Actionable(f):
 			s.ByPriority[f.Priority]++
+		case f.Minor:
+			// Rated negligible by the distro; counted in MinorUnfixed.
 		default:
 			s.Unfixed++
 			if Notable(f) {

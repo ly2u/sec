@@ -222,3 +222,24 @@ func TestUpToDateHostWithOnlyUnfixedIssues(t *testing.T) {
 	}
 	t.Log("\n" + text)
 }
+
+func TestAllShowsHiddenMinorIssues(t *testing.T) {
+	root, _, _ := debianHost(t)
+	put(t, root, "var/lib/dpkg/status", "Package: openssh-server\nStatus: install ok installed\nSource: openssh\nVersion: 1:9.2p1-2+deb12u3\n")
+	e := fixed("CVE-2020-15778", "", 7.8, false)
+	e.Ranges = []bundle.Range{{Type: "ECOSYSTEM", Events: []version.Event{{Introduced: "0"}}}}
+	u := "unimportant"
+	e.Status, e.Urgency = "unfixed", &u
+	out := t.TempDir()
+	path, _ := fixture.WriteBundle("debian", "12", "source", map[string][]bundle.Entry{"openssh": {e}}, out)
+	args := []string{"--root", root, "--offline", "--bundle", path, "--pubkey", filepath.Join(out, "key.pub"), "--no-cache"}
+	var a, b, errb bytes.Buffer
+	scan(args, &a, &errb)
+	scan(append(args, "--all"), &b, &errb)
+	if strings.Contains(a.String(), "CVE-2020-15778") {
+		t.Fatal("hidden by default")
+	}
+	if !strings.Contains(b.String(), "评为可忽略") || !strings.Contains(b.String(), "CVE-2020-15778") {
+		t.Fatalf("--all must reveal it for auditing\n%s", b.String())
+	}
+}

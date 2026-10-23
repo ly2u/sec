@@ -201,9 +201,13 @@ func TestDebianUnimportantUnfixedIsHidden(t *testing.T) {
 		withUrgency(entry("CVE-2026-0010", "", false), "high"),
 	}}
 	r := run(debian12, []system.Package{pkg("openssh-server", "1:9.2p1-2+deb12u7", "openssh", "1:9.2p1-2+deb12u7", system.Official)}, b, "", false)
-	f := only(t, r)
-	if f.ID != "CVE-2026-0010" || f.Minor || f.Urgency != "high" {
-		t.Fatalf("only the high-urgency issue may be reported: %+v", f)
+	if len(r.Findings) != 2 {
+		t.Fatalf("both kept for auditing, got %+v", r.Findings)
+	}
+	for _, f := range r.Findings {
+		if (f.ID == "CVE-2020-15778") != f.Minor {
+			t.Fatalf("only the unimportant issue is minor: %+v", f)
+		}
 	}
 	if r.MinorUnfixed != 1 {
 		t.Fatalf("the unimportant issue must be counted as hidden, got %d", r.MinorUnfixed)

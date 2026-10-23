@@ -288,7 +288,7 @@ func (r *Report) WriteText(out io.Writer) {
 		}
 	}
 
-	isUnfixed := func(f match.Finding) bool { return f.Status != match.Unknown && f.Fix == match.FixNone }
+	isUnfixed := func(f match.Finding) bool { return f.Status != match.Unknown && f.Fix == match.FixNone && !f.Minor }
 	unfixed := r.group(func(f match.Finding) bool { return isUnfixed(f) && (r.showAll || Notable(f)) })
 	hidden := 0
 	for _, f := range r.Findings {
@@ -310,6 +310,20 @@ func (r *Report) WriteText(out io.Writer) {
 		}
 		if hidden > 0 {
 			fmt.Fprintf(w, "  另有 %d 项暂无修复的一般问题未展开（使用 --all 查看）。稳定版发行版常将次要问题留待后续版本修复，这属于正常情况。\n", hidden)
+		}
+	}
+
+	if r.showAll {
+		minor := r.group(func(f match.Finding) bool { return f.Minor && f.Fix == match.FixNone && f.Status != match.Unknown })
+		if len(minor) > 0 {
+			section(w, "发行版评为可忽略、不计划修复（默认隐藏）")
+			for _, g := range minor {
+				fmt.Fprintf(w, "  · %s %s  %s", g.pkg, g.installed, ids(g.findings, 6))
+				if b := badges(g); b != "" {
+					fmt.Fprintf(w, "  （%s）", b)
+				}
+				fmt.Fprintln(w)
+			}
 		}
 	}
 

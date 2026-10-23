@@ -368,8 +368,8 @@ func Evaluate(in Input) Result {
 		for _, k := range order {
 			f, counted := evaluateVuln(in, g, k, byVuln[k], ks)
 			if !counted && f.Minor && f.Fix == FixNone && f.Status != Unknown {
+				// Kept (flagged) so --all and JSON consumers can audit what was hidden.
 				res.MinorUnfixed++
-				continue
 			}
 			if counted {
 				res.FixedCount++

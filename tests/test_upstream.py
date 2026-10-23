@@ -15,7 +15,7 @@ from collector.adapters.cvelist import apply_records
 from collector.adapters.nodejs import ARCHIVE, NodejsAdapter, entry_row
 from collector.bundles import generate, run_minisign
 from collector.http import FeedHTTP
-from collector.upstream import backfill, coverage, cve_ranges, cve_rows, node_ranges
+from collector.upstream import backfill, coverage, cve_ranges, cve_rows, explain, node_ranges
 
 FIXTURES = Path(__file__).parent / "fixtures" / "upstream"
 ROOT = Path(__file__).resolve().parents[1]
@@ -248,6 +248,32 @@ def test_product_prefixes_and_fixed_in_form():
     ]
 
 
+def test_postgresql_fix_lists_and_affects_prefix():
+    assert _events("PostgreSQL versions before 12.4, before 11.9 and before 10.14") == [
+        [{"introduced": "12.0"}, {"fixed": "12.4"}],
+        [{"introduced": "11.0"}, {"fixed": "11.9"}],
+        [{"introduced": "0"}, {"fixed": "10.14"}],
+    ]
+    assert _events("Fixedin v13.4, v12.8, v11.13") == [
+        [{"introduced": "13.0"}, {"fixed": "13.4"}],
+        [{"introduced": "12.0"}, {"fixed": "12.8"}],
+        [{"introduced": "0"}, {"fixed": "11.13"}],
+    ]
+    assert _events("Fixed in postgresql 14.3, postgresql 13.7, postgresql 9.6.25") == [
+        [{"introduced": "14.0"}, {"fixed": "14.3"}],
+        [{"introduced": "13.0"}, {"fixed": "13.7"}],
+        [{"introduced": "0"}, {"fixed": "9.6.25"}],
+    ]
+    assert _events("Affects OpenSSL 3.0.4") == [
+        [{"introduced": "3.0.4"}, {"last_affected": "3.0.4"}]
+    ]
+    # "and prior" / "and including" are part of a form, not separators.
+    assert _events("8.0.34 and prior") == [[{"introduced": "0"}, {"last_affected": "8.0.34"}]]
+    assert _events("up to and including 8.0.34") == [
+        [{"introduced": "0"}, {"last_affected": "8.0.34"}]
+    ]
+
+
 def test_unclear_prose_stays_skipped():
     for value in [
         "Apache HTTP Server 2.4",  # a whole branch named, no versions
@@ -257,6 +283,8 @@ def test_unclear_prose_stays_skipped():
         "github.com/moby/moby/v2/daemon < 2.0.0-beta.14",  # module, not engine, versions
         "7.2.x below 8.0.1",
         "2.4.x to 2.4.9",
+        "9.5, 9.6, 10, 11, 12",  # branches, not versions
+        "Fixed in 13",
     ]:
         assert cve_ranges([{"status": "affected", "version": value}]) == ([], 1), value
 
@@ -281,7 +309,10 @@ def test_coverage_reports_unread_strings(db):
         apply_records(session, [record("CVE-2026-109618", PHP), record("CVE-2026-0003", odd)])
     report = coverage(db, batch=1)
     assert report["php"]["cves"] == 2 and report["php"]["converted"] == 1
-    assert report["php"]["top_unparsed"] == [("see notes", 1)]
+    assert report["php"]["top_unparsed"] == [["see notes", 1, "CVE-2026-0003"]]
+    shown = explain(db, "CVE-2026-0003")["affected"][0]
+    assert shown["product"] == "php" and shown["ranges"] == [] and shown["skipped"] == 1
+    assert explain(db, "CVE-2026-9999") == {"cve": "CVE-2026-9999", "error": "not found"}
 
 
 def test_ambiguous_entries_are_skipped_not_guessed():

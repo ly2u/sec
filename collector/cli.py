@@ -39,6 +39,10 @@ def main():
     commands.add_parser(
         "upstream-coverage", help="Report per-product conversion coverage (read-only)"
     )
+    explain = commands.add_parser(
+        "upstream-explain", help="Show one CVE's affected[] and its L2 ranges (read-only)"
+    )
+    explain.add_argument("cve_id")
     for name in ("cve-baseline", "cve-delta", "kev", "epss", "osv-baseline", "osv-delta"):
         command = commands.add_parser(name)
         size = command.add_mutually_exclusive_group()
@@ -90,6 +94,11 @@ def main():
         from collector.upstream import coverage
 
         print(json.dumps(coverage(engine), ensure_ascii=False, indent=1))
+        return
+    if args.command == "upstream-explain":
+        from collector.upstream import explain
+
+        print(json.dumps(explain(engine, args.cve_id), ensure_ascii=False, indent=1))
         return
     if args.command == "status":
         with Session(engine) as session:

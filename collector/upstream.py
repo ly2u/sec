@@ -142,11 +142,13 @@ TEXT_BRANCH = re.compile(
 )
 # "Fixed in OpenSSL 1.1.1d (Affected 1.1.1-1.1.1c)".
 FIXED_IN = re.compile(r"fixed\s+in\s+(.+?)\s*\(\s*affected\s+([^)]*)\)", re.I)
+# "Fixed in postgresql 14.3, postgresql 13.7", "Fixedin v13.4, v12.8": fixes per branch.
+FIXED_LIST = re.compile(r"fixed\s*in\s+([^()]+)", re.I)
 # Product names some CNAs put in front of the version. Only names of products
 # we track; module paths whose versions are not the product's (moby/moby/v2)
 # are deliberately absent.
 PRODUCT_PREFIX = re.compile(
-    r"(?:all\s+)?(?:apache\s+http\s+server|openssl|docker\s+engine|postgresql|php|redis"
+    r"(?:affects\s+)?(?:all\s+)?(?:apache\s+http\s+server|openssl|docker\s+engine|postgresql|php|redis"
     r"|mysql(?:\s+server)?|mariadb|nginx|openssh|containerd"
     r"|github\.com/docker/docker(?:/[\w./-]*)?)(?:\s+versions?)?(?:\s+|-(?=[0-9])|$)",
     re.I,
@@ -154,7 +156,10 @@ PRODUCT_PREFIX = re.compile(
 # Separators between the parts of a combined string:
 # "7.3.x below 7.3.17 and 7.4.x below 7.4.5", "2.2.0 to 2.2.31, 2.4.1 to 2.4.23",
 # "5.5.57 and earlier  5.6.37 and earlier".
-TEXT_SPLIT = re.compile(r"\s*[,;]\s*(?:and\s+)?|\s+and\s+(?=v?[0-9])|\s{2,}")
+TEXT_SPLIT = re.compile(
+    r"\s*[,;]\s*(?:and\s+)?|\s+and\s+(?=v?[0-9]|(?:before|below|prior\s+to)\s+v?[0-9])|\s{2,}",
+    re.I,
+)
 
 
 def strip_product(value):
@@ -188,6 +193,8 @@ def _text_events(value):
         low, high = clean(span.group(1)), clean(span.group(2))
         if re.search(r"\.[xX*]$", span.group(1)):
             return None
+        if low and high and len(re.findall(r"[0-9]+", high)) < len(re.findall(r"[0-9]+", low)):
+            return None  # "v9.6 to v14": 14.5 would sort above the bound
         return [{"introduced": low}, {"last_affected": high}] if low and high else None
     for pattern, kind in TEXT_FORMS:
         match = pattern.fullmatch(value)
@@ -213,6 +220,15 @@ def _text_ranges(value):
             if not low or not high:
                 return None
             out.append([{"introduced": low}, {"last_affected": high}])
+        return out or None
+    fixed_list = FIXED_LIST.fullmatch(value)
+    if fixed_list:
+        out = []
+        for part in TEXT_SPLIT.split(fixed_list.group(1).strip()):
+            fixed = clean(strip_product(part))
+            if not fixed or len(re.findall(r"[0-9]+", fixed)) < 2:
+                return None
+            out.append([{"introduced": "0"}, {"fixed": fixed}])
         return out or None
     out = []
     for part in TEXT_SPLIT.split(value):
@@ -481,7 +497,8 @@ def coverage(engine, batch=2000, top=15):
                     affected.get("versions"), affected.get("defaultStatus"), unparsed
                 )
                 s = stats.setdefault(
-                    slug, {"cves": set(), "converted": set(), "unparsed": Counter()}
+                    slug,
+                    {"cves": set(), "converted": set(), "unparsed": Counter(), "example": {}},
                 )
                 s["cves"].add(rec.id)
                 if ranges:
@@ -489,15 +506,55 @@ def coverage(engine, batch=2000, top=15):
                 seen.setdefault(slug, []).extend(unparsed)
             for slug, strings in seen.items():
                 if rec.id not in stats[slug]["converted"]:
-                    stats[slug]["unparsed"].update(strings or ["<no affected versions>"])
+                    strings = strings or ["<no affected versions>"]
+                    stats[slug]["unparsed"].update(strings)
+                    for value in strings:
+                        stats[slug]["example"].setdefault(value, rec.id)
     return {
         slug: {
             "cves": len(s["cves"]),
             "converted": len(s["converted"]),
-            "top_unparsed": s["unparsed"].most_common(top),
+            "top_unparsed": [
+                [value, count, s["example"][value]]
+                for value, count in s["unparsed"].most_common(top)
+            ],
         }
         for slug, s in sorted(stats.items())
     }
+
+
+def explain(engine, cve_id):
+    """The CNA affected[] entries for tracked products in one CVE, and what they
+    convert to. Read-only; for checking the converter against a real record."""
+    with Session(engine) as session:
+        raw = session.execute(
+            select(Vulnerability.raw_record).where(Vulnerability.id == cve_id)
+        ).scalar_one_or_none()
+    if raw is None:
+        return {"cve": cve_id, "error": "not found"}
+    ids = identities()
+    out = []
+    for affected in raw.get("containers", {}).get("cna", {}).get("affected", []) or []:
+        key = (
+            (affected.get("vendor") or "").strip().lower(),
+            (affected.get("product") or "").strip().lower(),
+        )
+        unparsed = []
+        ranges, skipped = cve_ranges(
+            affected.get("versions"), affected.get("defaultStatus"), unparsed
+        )
+        out.append(
+            {
+                "product": ids.get(key),
+                "vendor": affected.get("vendor"),
+                "name": affected.get("product"),
+                "defaultStatus": affected.get("defaultStatus"),
+                "versions": affected.get("versions"),
+                "ranges": [r["events"] for r in ranges],
+                "skipped": skipped,
+            }
+        )
+    return {"cve": cve_id, "affected": out}
 
 
 # ---------------------------------------------------------------- Node.js semver

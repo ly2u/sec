@@ -195,7 +195,7 @@ def test_coverage_reports_unread_strings(db):
         "versions": [{"status": "affected", "version": "see notes"}],
     }
     with Session(db) as session, session.begin():
-        apply_records(session, [record("CVE-2026-109618", PHP), record("CVE-2026-3", odd)])
+        apply_records(session, [record("CVE-2026-109618", PHP), record("CVE-2026-0003", odd)])
     report = coverage(db, batch=1)
     assert report["php"]["cves"] == 2 and report["php"]["converted"] == 1
     assert report["php"]["top_unparsed"] == [("see notes", 1)]

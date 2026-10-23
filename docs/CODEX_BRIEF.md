@@ -39,6 +39,12 @@
 
 ## 阶段 1：仓库骨架与数据底座
 
+**阶段 0 结论（已确认，2026-10-23）**
+
+- 工作副本统一使用 `/opt/secwatch-dev`。在该目录重新 clone 仓库，然后删除 `/root/ly2u_SecWatch/sec` 这个临时副本，避免出现两份代码互相不一致。删除前先确认 `docs/host-survey.md` 已经复制过去。
+- 推送使用**仓库专属 deploy key**：在 VPS 上生成 ed25519 密钥，由站长把公钥添加到仓库的 Deploy keys 中并勾选写权限。不要使用账户级 token。
+- 网络和资源上限按 ARCHITECTURE.md D6 第 1、1a 条执行。Compose 文件从一开始就要写好 `secwatch-edge` 外部网络的声明（开发环境中可以先不创建这个网络，用 profile 或覆盖文件控制），并设置资源上限。
+
 1. 按 PRD 第 12 节创建目录骨架，可以适当简化。需要包含：`apps/server`、`collector/adapters`、`scanner/`（Go）、`rules/products`、`migrations`、`deploy/`、`docs/`、`tests/`、`.github/`。
 2. 编写 SQLAlchemy 模型和 Alembic 迁移。至少包括以下表：
    - `vulnerabilities`
@@ -114,6 +120,7 @@
 7. **集成测试**：
    - 使用 `debian:12`、`ubuntu:24.04`、`rockylinux:9`、`alpine` 容器
    - **必须包含至少一个真实的回移植用例**。上游版本号低于修复版本，但发行版已修复，扫描器必须判定为 `FIXED`
+   - 增加 `debian:13`。本机就是 Debian 13，阶段 3 结束时要在本机（宿主机）上以只读方式实际运行一次 `secwatch scan`，作为第一个真实环境验收。运行结果中如果出现 `CONFIRMED_AFFECTED`，要逐条人工核对 Debian Security Tracker。核对结果写入汇报，**不得提交到公开仓库**。
 8. **发布**：
    - 使用 GitHub Actions 和 goreleaser 构建 linux amd64/arm64 二进制
    - 附带 sha256 校验和与签名
@@ -146,7 +153,9 @@
 
 ## 阶段 5：生产部署（需要确认后执行）
 
-1. 根据阶段 0 的结论，写出生产部署计划，内容包括：目录 `/opt/secwatch`、反代接入方式、备份方案、回滚步骤。**等待确认后再执行。**
+1. 根据阶段 0 的结论，写出生产部署计划，内容包括：目录 `/opt/secwatch`、反代接入方式（按 ARCHITECTURE.md D6 第 1 条的 `secwatch-edge` 方案）、备份方案、回滚步骤。**等待确认后再执行。** 计划中还必须说明以下几点：
+   - 现有 Caddyfile 中的站点证书是怎么获得的（HTTP-01 / DNS-01 / 手动证书）。`sec.ly2u.com` 开启了 Cloudflare 代理，因此 TLS-ALPN-01 验证无法通过；建议改用 Cloudflare Origin Certificate，在 Caddy 中用 `tls <cert> <key>` 指定。
+   - 用 `openssl s_client` 实测以下三种情况，确认第一层防护是否已经生效：直接用 IP 连接且不带 SNI、使用伪造的 SNI、使用 `sec.ly2u.com` 作为 SNI。如果 Caddyfile 中存在兜底站点（例如 `:443` 或 `https://`），要指出来。
 2. 给站长列出一份 Cloudflare 操作清单，由站长手动完成：
    - SSL 模式设为 Full (strict)
    - 申请 Origin Certificate

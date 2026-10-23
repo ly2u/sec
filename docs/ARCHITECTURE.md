@@ -212,7 +212,21 @@ CVSS 只是其中一个维度。不得根据评分推断"可远程提权"之类�
 
 ## D6. 部署与 Cloudflare
 
-1. **先探测，后部署**。检查 VPS 上 80/443 端口占用和现有反向代理（原 PRD 提到 `/opt/ly-stack`）。如果已有反代，只新增一个站点配置，反代到 `127.0.0.1:<port>`，**不要另起 Caddy 抢占 443 端口**。
+1. **接入现有 Caddy（阶段 0 实测结论）**。本机 80/443 端口由 `ly-stack` 项目中的 Caddy 容器占用，Caddyfile 位于 `/opt/ly-stack/Caddyfile`。**不另起公网 Caddy。** 由于 Caddy 运行在容器里，它访问不到宿主机的 `127.0.0.1`，因此采用以下网络方案：
+   - 新建一个独立的外部网络 `secwatch-edge`（`docker network create secwatch-edge`）。
+   - SecWatch 这边**只有 `web` 容器**加入 `secwatch-edge`；`postgres` 和 `worker` 只在 SecWatch 的内部网络中。
+   - 在 `ly-stack` 的 compose 文件中，给 caddy 服务追加 `secwatch-edge` 网络（声明为 `external: true`），然后在 Caddyfile 中新增 `sec.ly2u.com` 站点，反代到 `secwatch-web:8000`。
+   - **不要**让 SecWatch 直接加入 `ly-stack_default` 网络。那样会让我们的容器和 ly-stack 的其他服务互通，而且两个项目的生命周期会耦合在一起。
+   - 修改 ly-stack 的 compose 文件和 Caddyfile 属于生产变更，只在阶段 5 确认后执行。具体步骤：先运行 `caddy validate`，再执行 `caddy reload`（不中断服务）；如果出问题，用备份的 Caddyfile 回滚。
+   - 开发阶段（阶段 1–4）完全不接触 Caddy。`web` 只绑定 `127.0.0.1:18080`，站长通过 SSH 隧道访问。
+1a. **资源上限**。这台机器还在运行 ly-stack 的线上服务，所以 SecWatch 的每个容器都必须设置 `mem_limit` 和 `cpus`，防止全量导入时抢占资源。建议初始值：
+   | 容器 | 内存 | CPU |
+   |---|---|---|
+   | postgres | 4 GB | 2 |
+   | worker | 2 GB | 1.5 |
+   | web | 1 GB | 1 |
+
+   全量导入之后，根据实测数据再做调整。
 2. **源站 IP 保护（分三层，成本由低到高）**。隐藏 IP 是主要防线，但 IP 可能通过以下途径泄露：全网 443 端口扫描时源站返回的证书、历史 DNS 记录、同一台机器上未开代理的其他子域名、服务器发出的邮件头。
    - **第一层，必做**：反代默认站点拒绝未知域名。nginx 使用 `listen 443 ssl default_server; ssl_reject_handshake on;`（需 nginx ≥ 1.19.4），80 端口默认站点 `return 444;`；Caddy 使用等效配置。目的是让扫描器按 IP 访问时拿不到任何证书，无法反查出域名。注意：这一层只能**防止 IP 被发现**，挡不住已经知道 IP 的攻击者，因为对方可以伪造 Host/SNI，而 SYN 洪泛等 L3/L4 攻击根本到不了 nginx。
    - **第二层，必做**：SSL 模式设为 Full (strict)，并使用 Cloudflare Origin Certificate；检查 `ly2u.com` 各子域名，凡指向本机且未开代理的记录都要处理掉。

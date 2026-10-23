@@ -1,10 +1,15 @@
 package system
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pierrec/lz4/v4"
 
 	"github.com/ly2u/sec/scanner/internal/version"
 )
@@ -198,6 +203,39 @@ func TestSourceRPMName(t *testing.T) {
 	} {
 		if got := sourceRPMName(in); got != want {
 			t.Errorf("%s => %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCompressedAptLists(t *testing.T) {
+	for _, suffix := range []string{".lz4", ".gz"} {
+		root := t.TempDir()
+		write(t, root, "etc/os-release", "ID=debian\nVERSION_ID=\"12\"\n")
+		write(t, root, "var/lib/dpkg/status", "Package: libssl3\nStatus: install ok installed\nSource: openssl\nVersion: 3.0.15-1~deb12u1\n")
+		lists := "var/lib/apt/lists/"
+		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_InRelease", "Origin: Debian\n")
+		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_main_binary-amd64_Packages.diff_Index", "SHA256-Current: x\n")
+		var buf bytes.Buffer
+		var w io.WriteCloser
+		if suffix == ".lz4" {
+			w = lz4.NewWriter(&buf)
+		} else {
+			w = gzip.NewWriter(&buf)
+		}
+		w.Write([]byte("Package: libssl3\nVersion: 3.0.15-1~deb12u1\n"))
+		w.Close()
+		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_main_binary-amd64_Packages"+suffix, buf.String())
+		h := Host{Root: root}
+		o, _ := DetectOS(h)
+		inv, err := ReadPackages(h, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if inv.Packages[0].Origin != Official {
+			t.Errorf("%s-compressed index must be read: origin=%s notes=%v", suffix, inv.Packages[0].Origin, inv.Notes)
+		}
+		if len(inv.Notes) != 0 {
+			t.Errorf("%s: pdiff index must not be reported as skipped: %v", suffix, inv.Notes)
 		}
 	}
 }

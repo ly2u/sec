@@ -3,6 +3,7 @@ package system
 import (
 	"bufio"
 	"bytes"
+	"compress/bzip2"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -15,6 +16,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
+	"github.com/pierrec/lz4/v4"
+	"github.com/ulikunitz/xz"
 
 	"github.com/ly2u/sec/scanner/internal/version"
 )
@@ -176,16 +181,35 @@ func loadAptIndex(h Host) *aptIndex {
 	return idx
 }
 
+// listSuffixes maps compressed index suffixes to their decoders. Docker images
+// ship apt with Acquire::GzipIndexes, which keeps indexes compressed on disk.
+var listSuffixes = map[string]func(io.Reader) (io.Reader, error){
+	"":     func(r io.Reader) (io.Reader, error) { return r, nil },
+	".gz":  func(r io.Reader) (io.Reader, error) { return gzip.NewReader(r) },
+	".lz4": func(r io.Reader) (io.Reader, error) { return lz4.NewReader(r), nil },
+	".xz":  func(r io.Reader) (io.Reader, error) { return xz.NewReader(r) },
+	".bz2": func(r io.Reader) (io.Reader, error) { return bzip2.NewReader(r), nil },
+	".zst": func(r io.Reader) (io.Reader, error) {
+		d, err := zstd.NewReader(r)
+		if err != nil {
+			return nil, err
+		}
+		return d.IOReadCloser(), nil
+	},
+}
+
 func (idx *aptIndex) addList(h Host, dir, name string) {
-	compressed := false
-	switch {
-	case strings.HasSuffix(name, "_Packages"):
-	case strings.HasSuffix(name, "_Packages.gz"):
-		compressed = true
-	case strings.Contains(name, "_Packages."):
-		idx.skipped++ // lz4/xz indexes are not decoded; treated as unknown
+	i := strings.LastIndex(name, "_Packages")
+	if i < 0 {
 		return
-	default:
+	}
+	suffix := name[i+len("_Packages"):]
+	if strings.Contains(strings.ToLower(suffix), "diff") {
+		return // pdiff bookkeeping, not an index
+	}
+	decode, ok := listSuffixes[suffix]
+	if !ok {
+		idx.skipped++ // unknown index compression; packages fall back to third-party
 		return
 	}
 	f, err := os.Open(filepath.Join(dir, name))
@@ -193,16 +217,15 @@ func (idx *aptIndex) addList(h Host, dir, name string) {
 		return
 	}
 	defer f.Close()
-	var reader io.Reader = f
-	if compressed {
-		gz, err := gzip.NewReader(f)
-		if err != nil {
-			return
-		}
-		defer gz.Close()
-		reader = gz
-		name = strings.TrimSuffix(name, ".gz")
+	reader, err := decode(f)
+	if err != nil {
+		idx.skipped++
+		return
 	}
+	if c, ok := reader.(io.Closer); ok && reader != io.Reader(f) {
+		defer c.Close()
+	}
+	name = strings.TrimSuffix(name, suffix)
 	origin, label := releaseOrigin(h, name)
 	cls := ThirdParty
 	if officialOrigins[origin] {

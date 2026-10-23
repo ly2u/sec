@@ -36,4 +36,6 @@ if code != 3:
 
 for e in errors:
     print("  -", e)
+if errors:
+    print("  notes:", " | ".join(report.get("notes", [])))
 sys.exit(1 if errors else 0)

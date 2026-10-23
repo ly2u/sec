@@ -25,7 +25,11 @@ from apps.server.models import UpstreamAdvisory, Vulnerability
 from collector.store import digest, upsert
 
 RULES = Path(__file__).resolve().parents[1] / "rules" / "products"
-VERSION = re.compile(r"[0-9][0-9A-Za-z.+~_-]{0,63}")
+# Upstream versions as the scanner compares them: no '-' (rpm release separator)
+# and no '+' build metadata; pre-release and build suffixes are dropped.
+VERSION = re.compile(r"[0-9][0-9A-Za-z.~_]{0,63}")
+# GitHub's CNA writes ranges inside the version field: ">= 1.7.0, < 1.7.27".
+GITHUB_PART = re.compile(r"(>=|<=|>|<|=)\s*(\S+)")
 WILDCARD = re.compile(r"([0-9]+(?:\.[0-9]+)*)\.[*x]")
 UNKNOWN = {"", "*", "0", "n/a", "unspecified", "all", "-"}
 
@@ -48,6 +52,15 @@ def _next_branch(prefix):
     return ".".join(str(p) for p in parts + [0] * max(0, 3 - len(parts)))
 
 
+def clean(version):
+    """'v2.0.0-beta.1+meta' -> '2.0.0'; None if it is not a plain version."""
+    value = (version or "").strip()
+    if value[:1] in "vV" and value[1:2].isdigit():
+        value = value[1:]
+    value = re.split(r"[-+]", value, maxsplit=1)[0]
+    return value if VERSION.fullmatch(value) else None
+
+
 def _start(version):
     """Normalise a CVE 'version' to an introduced value, or None if unusable."""
     value = (version or "").strip()
@@ -57,9 +70,40 @@ def _start(version):
     if wildcard:
         prefix = wildcard.group(1)
         return prefix + ".0" * max(1, 3 - len(prefix.split("."))), _next_branch(prefix)
-    if VERSION.fullmatch(value):
-        return value, None
+    cleaned = clean(value)
+    if cleaned:
+        return cleaned, None
     return None, None
+
+
+def _github_events(value):
+    """Events for a GitHub-style range string, or None if it is not one."""
+    low = fixed = last = exact = None
+    for part in [p.strip() for p in value.split(",") if p.strip()]:
+        match = GITHUB_PART.fullmatch(part)
+        if not match:
+            return None
+        op, version = match.group(1), clean(match.group(2))
+        if version is None:
+            return None
+        if op in (">=", ">"):
+            low = version
+        elif op == "<":
+            fixed = version
+        elif op == "<=":
+            last = version
+        else:
+            exact = version
+    if exact:
+        return [{"introduced": exact}, {"last_affected": exact}]
+    events = [{"introduced": low or "0"}]
+    if fixed:
+        events.append({"fixed": fixed})
+    elif last:
+        events.append({"last_affected": last})
+    elif not low:
+        return None
+    return events
 
 
 def cve_ranges(versions, default_status="unaffected"):
@@ -78,6 +122,18 @@ def cve_ranges(versions, default_status="unaffected"):
         if (item.get("versionType") or "").lower() == "git":
             skipped += 1
             continue
+        raw = (item.get("version") or "").strip()
+        if (
+            re.search(r"[<>=]", raw)
+            and not item.get("lessThan")
+            and not item.get("lessThanOrEqual")
+        ):
+            events = _github_events(raw)
+            if events is None:
+                skipped += 1
+            else:
+                ranges.append({"type": "UPSTREAM", "events": events})
+            continue
         start, branch_end = _start(item.get("version"))
         if start is None:
             skipped += 1
@@ -88,16 +144,16 @@ def cve_ranges(versions, default_status="unaffected"):
         if less:
             if less == "*":
                 pass  # affected from start onward, no fix in this branch
-            elif VERSION.fullmatch(less):
-                events.append({"fixed": less})
+            elif clean(less):
+                events.append({"fixed": clean(less)})
             else:
                 skipped += 1
                 continue
         elif less_eq:
             if less_eq == "*":
                 pass
-            elif VERSION.fullmatch(less_eq):
-                events.append({"last_affected": less_eq})
+            elif clean(less_eq):
+                events.append({"last_affected": clean(less_eq)})
             else:
                 skipped += 1
                 continue

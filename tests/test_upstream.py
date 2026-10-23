@@ -97,10 +97,61 @@ def test_nginx_open_ended_range_stops_at_next_listed_branch():
     assert {"type": "UPSTREAM", "events": [{"introduced": "1.25.0"}, {"limit": "1.30.0"}]} in ranges
 
 
+# GitHub's CNA (containerd, moby, redis …) writes ranges inside "version".
+CONTAINERD = {
+    "vendor": "containerd",
+    "product": "containerd",
+    "versions": [
+        {"version": "< 1.6.38", "status": "affected"},
+        {"version": ">= 1.7.0-beta.0, < 1.7.27", "status": "affected"},
+        {"version": ">= 2.0.0, < 2.0.4", "status": "affected"},
+        {"version": "= 2.1.0", "status": "affected"},
+    ],
+}
+
+
+def test_github_cna_range_syntax():
+    ranges, skipped = cve_ranges(CONTAINERD["versions"])
+    assert skipped == 0
+    assert [r["events"] for r in ranges] == [
+        [{"introduced": "0"}, {"fixed": "1.6.38"}],
+        [{"introduced": "1.7.0"}, {"fixed": "1.7.27"}],  # pre-release suffix dropped
+        [{"introduced": "2.0.0"}, {"fixed": "2.0.4"}],
+        [{"introduced": "2.1.0"}, {"last_affected": "2.1.0"}],
+    ]
+    assert [r["product"] for r in cve_rows(record("CVE-2026-2", CONTAINERD))] == ["containerd"]
+
+
+def test_versions_never_carry_dashes_to_the_scanner():
+    versions = [{"status": "affected", "version": "v3.0.0-rc1", "lessThan": "3.0.5+build7"}]
+    assert cve_ranges(versions)[0] == [
+        {"type": "UPSTREAM", "events": [{"introduced": "3.0.0"}, {"fixed": "3.0.5"}]}
+    ]
+
+
+def test_invalid_upstream_row_is_skipped_not_fatal(db, tmp_path, signing):
+    binary, secret, public = signing
+    with Session(db) as session, session.begin():
+        apply_records(session, [record("CVE-2026-109618", PHP)])
+        bad = session.get(UpstreamAdvisory, "cve:php:CVE-2026-109618")
+        bad.ranges = [{"type": "UPSTREAM", "events": [{"introduced": "1.0-rc1"}]}]
+    out = tmp_path / "bundles"
+    generate(db, out, secret, public, binary=binary)
+    manifest = json.loads((out / "manifest.json").read_bytes())
+    payload = json.loads(
+        zstandard.ZstdDecompressor().decompress(
+            (out / manifest["bundles"]["upstream-1"]["file"]).read_bytes()
+        )
+    )
+    assert "php" not in payload["source_packages"]
+    assert "debian-12" in manifest["bundles"], "other bundles are still published"
+
+
 def test_ambiguous_entries_are_skipped_not_guessed():
     assert cve_ranges([{"status": "affected", "version": "0"}]) == ([], 1)
     assert cve_ranges([{"status": "affected", "version": "R36", "lessThan": "*"}]) == ([], 1)
     assert cve_ranges([{"status": "affected", "version": "abc", "versionType": "git"}]) == ([], 1)
+    assert cve_ranges([{"status": "affected", "version": "> latest"}]) == ([], 1)
     # "Everything affected except ..." cannot be expressed safely.
     assert cve_ranges([{"status": "unaffected", "version": "2.0"}], "affected")[0] == []
 

@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -121,7 +122,9 @@ def enrichment_for(session, ids):
     return enrichment
 
 
-UPSTREAM_EVENT = re.compile(r"[0-9][0-9A-Za-z.+~_-]{0,63}")
+# Must match the scanner's upstream comparator: no '-' and no '+'.
+UPSTREAM_EVENT = re.compile(r"[0-9][0-9A-Za-z.~_]{0,63}")
+logger = logging.getLogger(__name__)
 
 
 def upstream_entries(session):
@@ -137,18 +140,22 @@ def upstream_entries(session):
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             raise ValueError("Unsafe reference URL")
         ranges = []
+        valid = True
         for r in row.ranges:
-            if r.get("type") != "UPSTREAM":
-                raise ValueError("Upstream ranges must be UPSTREAM")
             events = []
-            for e in r["events"]:
+            for e in r.get("events", []):
                 ((kind, value),) = e.items()
                 if kind not in ("introduced", "fixed", "last_affected", "limit") or not (
                     value == "0" or UPSTREAM_EVENT.fullmatch(value)
                 ):
-                    raise ValueError("Unsafe upstream version event")
+                    valid = False
                 events.append({kind: value})
+            valid = valid and r.get("type") == "UPSTREAM"
             ranges.append({"type": "UPSTREAM", "events": events})
+        if not valid:
+            # One malformed record must not block publishing every bundle.
+            logger.warning("Skipping upstream advisory %s with invalid ranges", row.id)
+            continue
         facts = [enrichment[c] for c in row.cve_ids if c in enrichment]
         if row.cve_ids and facts and all(f.status == "REJECTED" for f in facts):
             continue

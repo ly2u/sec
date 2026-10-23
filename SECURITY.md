@@ -1,0 +1,26 @@
+# 安全策略 / Security Policy
+
+## 报告本项目的安全漏洞
+
+**请不要在公开 Issue 中报告。**
+
+请使用 GitHub 的私密漏洞报告功能：本仓库 → **Security** → **Report a vulnerability**。
+
+我们会尽快确认收到，并在修复发布后公开致谢（如你愿意）。
+
+## 范围
+
+以下问题属于本项目的安全漏洞：
+
+- 扫描器 `secwatch` 的问题，例如执行了非预期的命令、写入了文件、泄露了主机信息、绕过了签名校验
+- 数据包签名或校验链的问题
+- `sec.ly2u.com` 站点及 API 的漏洞
+
+以下情况**不属于**本项目漏洞：
+
+- 第三方软件本身的漏洞。请向对应厂商报告，或通过协调披露渠道报告。
+- 漏洞数据有误（例如修复版本写错）。请通过普通 Issue 纠错。
+
+## Reporting
+
+Please use GitHub private vulnerability reporting (Security → Report a vulnerability). Do not open public issues for security problems in this project.

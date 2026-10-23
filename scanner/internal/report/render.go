@@ -178,10 +178,22 @@ func (r *Report) WriteText(out io.Writer) {
 
 	s := r.Summary
 	section(w, "结论")
-	fmt.Fprintf(w, "  P0 立即处理 %d   P1 尽快处理 %d   P2 计划处理 %d   P3 了解即可 %d\n",
-		s.ByPriority["P0"], s.ByPriority["P1"], s.ByPriority["P2"], s.ByPriority["P3"])
-	fmt.Fprintf(w, "  已检查 %d 个软件包 · 已修复无需处理 %d 项 · 发行版暂无修复 %d 项 · 第三方软件包（未覆盖）%d 个\n",
-		s.Packages, s.AlreadyFixed, s.Unfixed, s.ThirdParty)
+	actionableTotal := s.ByPriority["P0"] + s.ByPriority["P1"] + s.ByPriority["P2"] + s.ByPriority["P3"]
+	if actionableTotal == 0 {
+		fmt.Fprintln(w, "  ✓ 没有需要升级的软件包：已安装的版本均包含发行版已发布的全部安全修复。")
+	} else {
+		fmt.Fprintf(w, "  可修复：P0 立即处理 %d   P1 尽快处理 %d   P2 计划处理 %d   P3 了解即可 %d\n",
+			s.ByPriority["P0"], s.ByPriority["P1"], s.ByPriority["P2"], s.ByPriority["P3"])
+	}
+	fmt.Fprintf(w, "  已检查 %d 个软件包 · 已由安装的版本修复 %d 项 · 第三方软件包（未覆盖）%d 个\n",
+		s.Packages, s.AlreadyFixed, s.ThirdParty)
+	if s.Unfixed > 0 {
+		fmt.Fprintf(w, "  发行版暂无修复 %d 项（目前没有可执行的升级），其中值得关注 %d 项", s.Unfixed, s.UnfixedNotable)
+		if s.MinorUnfixed > 0 {
+			fmt.Fprintf(w, "；另有 %d 项被发行版评为可忽略，未计入", s.MinorUnfixed)
+		}
+		fmt.Fprintln(w)
+	}
 	if s.RestartServices > 0 || s.RebootNeeded {
 		reboot := "否"
 		if s.RebootNeeded {
@@ -276,28 +288,29 @@ func (r *Report) WriteText(out io.Writer) {
 		}
 	}
 
-	unfixed := r.group(func(f match.Finding) bool {
-		return f.Status != match.Unknown && f.Fix == match.FixNone && (r.showAll || f.KEV || f.Priority <= "P2")
-	})
+	isUnfixed := func(f match.Finding) bool { return f.Status != match.Unknown && f.Fix == match.FixNone }
+	unfixed := r.group(func(f match.Finding) bool { return isUnfixed(f) && (r.showAll || Notable(f)) })
 	hidden := 0
 	for _, f := range r.Findings {
-		if f.Status != match.Unknown && f.Fix == match.FixNone && !(r.showAll || f.KEV || f.Priority <= "P2") {
+		if isUnfixed(f) && !(r.showAll || Notable(f)) {
 			hidden++
 		}
 	}
 	if len(unfixed) > 0 || hidden > 0 {
-		section(w, "发行版暂无修复")
+		section(w, "发行版暂无修复（目前没有可执行的升级，仅供了解）")
+		if len(unfixed) > 0 {
+			fmt.Fprintln(w, "  以下问题已被在野利用、被利用概率较高，或为对外服务中的严重漏洞，建议关注发行版公告并评估缓解措施：")
+		}
 		for _, g := range unfixed {
-			fmt.Fprintf(w, "  [%s] %s %s  %s", g.priority, g.pkg, g.installed, ids(g.findings, 4))
+			fmt.Fprintf(w, "  · %s %s  %s", g.pkg, g.installed, ids(g.findings, 4))
 			if b := badges(g); b != "" {
 				fmt.Fprintf(w, "  （%s）", b)
 			}
 			fmt.Fprintln(w)
 		}
 		if hidden > 0 {
-			fmt.Fprintf(w, "  另有 %d 项低风险问题暂无修复，多为发行版判定的次要问题；使用 --all 查看。\n", hidden)
+			fmt.Fprintf(w, "  另有 %d 项暂无修复的一般问题未展开（使用 --all 查看）。稳定版发行版常将次要问题留待后续版本修复，这属于正常情况。\n", hidden)
 		}
-		fmt.Fprintln(w, "  这些问题没有可升级的版本，请关注发行版公告；对外暴露的服务可考虑配置层面的缓解措施。")
 	}
 
 	if unknown := r.group(func(f match.Finding) bool { return f.Status == match.Unknown }); len(unknown) > 0 {
@@ -308,7 +321,7 @@ func (r *Report) WriteText(out io.Writer) {
 	}
 
 	if low := r.Summary.ByPriority["P3"]; low > 0 && !r.showAll {
-		fmt.Fprintf(w, "\n另有 P3 低优先级问题 %d 项未展开，使用 --all 查看全部。\n", low)
+		fmt.Fprintf(w, "\n另有 %d 项可修复的低优先级问题未展开，使用 --all 查看全部。\n", low)
 	}
 
 	if rt := r.Runtime; rt != nil {

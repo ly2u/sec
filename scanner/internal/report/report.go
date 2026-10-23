@@ -63,12 +63,18 @@ type DataInfo struct {
 }
 
 type Summary struct {
-	Packages        int            `json:"packages"`
-	Sources         int            `json:"sources_evaluated"`
-	AlreadyFixed    int            `json:"already_fixed"`
+	Packages     int `json:"packages"`
+	Sources      int `json:"sources_evaluated"`
+	AlreadyFixed int `json:"already_fixed"`
+	// ByPriority counts only actionable findings (an upgrade, reboot or Pro
+	// fix exists). Issues without any fix are counted under Unfixed instead:
+	// "fix urgently" must never be shown when there is nothing to do.
 	ByPriority      map[string]int `json:"by_priority"`
 	ByStatus        map[string]int `json:"by_status"`
 	Unfixed         int            `json:"no_fix_available"`
+	UnfixedNotable  int            `json:"no_fix_notable"`
+	MinorUnfixed    int            `json:"minor_unfixed_hidden"`
+	KEV             int            `json:"kev"`
 	ThirdParty      int            `json:"third_party_packages"`
 	RestartServices int            `json:"services_needing_restart"`
 	RebootNeeded    bool           `json:"reboot_needed"`
@@ -139,7 +145,7 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 		}
 		f.Exposed = exposed
 		f.Priority = Priority(f, exposed)
-		if f.Status == match.Unknown {
+		if f.Status == match.Unknown || (f.Minor && !f.KEV) {
 			f.Priority = "P3"
 		}
 		r.Findings = append(r.Findings, f)
@@ -167,12 +173,22 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 	s := Summary{
 		Packages: res.PackagesScanned, Sources: res.SourcesEvaluated, AlreadyFixed: res.FixedCount,
 		ByPriority: map[string]int{}, ByStatus: map[string]int{}, ThirdParty: len(res.ThirdParty),
+		MinorUnfixed: res.MinorUnfixed,
 	}
 	for _, f := range r.Findings {
-		s.ByPriority[f.Priority]++
 		s.ByStatus[string(f.Status)]++
-		if f.Fix == match.FixNone {
+		if f.KEV {
+			s.KEV++
+		}
+		switch {
+		case f.Status == match.Unknown:
+		case Actionable(f):
+			s.ByPriority[f.Priority]++
+		default:
 			s.Unfixed++
+			if Notable(f) {
+				s.UnfixedNotable++
+			}
 		}
 		if f.Fix == match.FixReboot {
 			s.RebootNeeded = true
@@ -190,6 +206,26 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 
 func compareVersions(kind version.Kind, a, b string) (int, error) {
 	return version.Compare(kind, a, b)
+}
+
+// Actionable reports whether the user can do something about f now.
+func Actionable(f match.Finding) bool {
+	return f.Fix == match.FixUpgrade || f.Fix == match.FixReboot || f.Fix == match.FixSubscription
+}
+
+// Notable marks unfixed issues worth showing by default: exploited in the
+// wild, likely to be exploited, or critical and reachable from the network.
+func Notable(f match.Finding) bool {
+	epss := 0.0
+	if f.EPSS != nil {
+		epss = *f.EPSS
+	}
+	return f.KEV || epss >= EPSSHigh || (f.Exposed && f.CVSS != nil && *f.CVSS >= CVSSCritical)
+}
+
+// Urgent decides the exit code: an actionable P0/P1, or anything in KEV.
+func (r *Report) Urgent() bool {
+	return r.Summary.ByPriority["P0"]+r.Summary.ByPriority["P1"] > 0 || r.Summary.KEV > 0
 }
 
 func score(v *float64) float64 {

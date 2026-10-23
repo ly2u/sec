@@ -184,3 +184,41 @@ func TestMaliciousPackageNameNeverReachesCommand(t *testing.T) {
 		t.Fatal("offline mode must be labelled as such")
 	}
 }
+
+// Modelled on the first real Debian 13 scan: nothing to upgrade, but many
+// unfixed issues. The report must say "nothing to upgrade", must not label
+// anything "fix urgently", and must exit 0.
+func TestUpToDateHostWithOnlyUnfixedIssues(t *testing.T) {
+	root, _, _ := debianHost(t)
+	put(t, root, "var/lib/dpkg/status", "Package: openssh-server\nStatus: install ok installed\nSource: openssh\nVersion: 1:9.2p1-2+deb12u3\n")
+	unfixed := func(cve string, cvss, epss float64, urgency string) bundle.Entry {
+		e := fixed(cve, "", cvss, false)
+		e.Ranges = []bundle.Range{{Type: "ECOSYSTEM", Events: []version.Event{{Introduced: "0"}}}}
+		e.Status, e.EPSS, e.Urgency = "unfixed", &epss, &urgency
+		return e
+	}
+	out := t.TempDir()
+	path, _ := fixture.WriteBundle("debian", "12", "source", map[string][]bundle.Entry{"openssh": {
+		unfixed("CVE-2020-15778", 7.8, 0.25, "unimportant"),
+		unfixed("CVE-2026-0020", 7.5, 0.30, "medium"),
+		unfixed("CVE-2026-0021", 5.0, 0.001, "low"),
+		fixed("CVE-2024-6387", "1:9.2p1-2+deb12u3", 8.1, false),
+	}}, out)
+	var stdout, stderr bytes.Buffer
+	code := scan([]string{"--root", root, "--offline", "--bundle", path, "--pubkey", filepath.Join(out, "key.pub"), "--no-cache"}, &stdout, &stderr)
+	text := stdout.String()
+	if code != exitOK {
+		t.Fatalf("nothing actionable and nothing in KEV: exit code must be 0, got %d\n%s", code, text)
+	}
+	for _, want := range []string{"没有需要升级的软件包", "发行版暂无修复 2 项", "值得关注 1 项", "1 项被发行版评为可忽略", "CVE-2026-0020"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{"CVE-2020-15778", "尽快处理", "立即处理"} {
+		if strings.Contains(text, unwanted) {
+			t.Errorf("must not contain %q\n%s", unwanted, text)
+		}
+	}
+	t.Log("\n" + text)
+}

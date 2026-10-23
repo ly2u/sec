@@ -83,6 +83,9 @@ type Entry struct {
 	KEV                  bool     `json:"kev"`
 	EPSS                 *float64 `json:"epss"`
 	Ref                  string   `json:"ref"`
+	// Urgency is the Debian security tracker rating (unimportant, low, medium,
+	// high, end-of-life); absent for other distros.
+	Urgency *string `json:"urgency"`
 }
 
 // Manifest points at the current bundle of each distro release.

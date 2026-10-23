@@ -95,6 +95,19 @@ def test_real_signature_tamper_noop_changed_release_and_7_day_retention(db, tmp_
     assert not orphan.exists() and path.exists()
 
 
+def test_debian_urgency_reaches_bundle(db, tmp_path, signing):
+    binary, secret, public = signing
+    record = json.loads((ROOT / "tests/fixtures/osv/DEBIAN-CVE-2005-3120.json").read_text())
+    with Session(db) as session, session.begin():
+        apply_records(session, [record], "Debian")
+    out = tmp_path / "bundles"
+    generate(db, out, secret, public, binary=binary)
+    manifest = json.loads((out / "manifest.json").read_bytes())
+    path = out / manifest["bundles"]["debian-12"]["file"]
+    payload = json.loads(zstandard.ZstdDecompressor().decompress(path.read_bytes()))
+    assert payload["source_packages"]["lynx"][0]["urgency"] == "high"
+
+
 def test_signature_failure_cannot_replace_manifest(db, tmp_path, signing, monkeypatch):
     import collector.bundles as bundles
 

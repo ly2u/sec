@@ -187,3 +187,43 @@ func TestUnparsableVersionIsUnknown(t *testing.T) {
 		t.Fatalf("garbage version must yield UNKNOWN, never FIXED: %+v", f)
 	}
 }
+
+func withUrgency(e bundle.Entry, u string) bundle.Entry {
+	e.Urgency = &u
+	return e
+}
+
+// CVE-2020-15778 (openssh scp): Debian rates it "unimportant" in every release
+// and will never fix it. It must not appear as a finding.
+func TestDebianUnimportantUnfixedIsHidden(t *testing.T) {
+	b := map[string][]bundle.Entry{"openssh": {
+		withUrgency(entry("CVE-2020-15778", "", false), "unimportant"),
+		withUrgency(entry("CVE-2026-0010", "", false), "high"),
+	}}
+	r := run(debian12, []system.Package{pkg("openssh-server", "1:9.2p1-2+deb12u7", "openssh", "1:9.2p1-2+deb12u7", system.Official)}, b, "", false)
+	f := only(t, r)
+	if f.ID != "CVE-2026-0010" || f.Minor || f.Urgency != "high" {
+		t.Fatalf("only the high-urgency issue may be reported: %+v", f)
+	}
+	if r.MinorUnfixed != 1 {
+		t.Fatalf("the unimportant issue must be counted as hidden, got %d", r.MinorUnfixed)
+	}
+}
+
+func TestMinorWithFixIsStillReportedButMarked(t *testing.T) {
+	b := map[string][]bundle.Entry{"foo": {withUrgency(entry("CVE-2026-0011", "1.0-2", false), "unimportant")}}
+	f := only(t, run(debian12, []system.Package{pkg("foo", "1.0-1", "", "", system.Official)}, b, "", false))
+	if !f.Minor || f.Fix != FixUpgrade {
+		t.Fatalf("an available fix is still worth listing, marked minor: %+v", f)
+	}
+}
+
+func TestMixedUrgencyIsNotMinor(t *testing.T) {
+	a := withUrgency(entry("CVE-2026-0012", "", false), "unimportant")
+	b2 := withUrgency(entry("CVE-2026-0012", "", false), "medium")
+	b2.ID = "DLA-0000-1"
+	r := run(debian12, []system.Package{pkg("foo", "1.0-1", "", "", system.Official)}, map[string][]bundle.Entry{"foo": {a, b2}}, "", false)
+	if f := only(t, r); f.Minor {
+		t.Fatalf("one record rating it medium means it is not negligible: %+v", f)
+	}
+}

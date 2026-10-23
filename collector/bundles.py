@@ -83,6 +83,14 @@ def safe_ranges(ranges):
     return result
 
 
+def urgency(metadata):
+    value = ((metadata or {}).get("ecosystem_specific") or {}).get("urgency")
+    if not isinstance(value, str):
+        return None
+    value = value.strip().strip("*").strip().lower()
+    return value if re.fullmatch(r"[a-z][a-z -]{0,31}", value) else None
+
+
 def bundle_entries(session, distro, release):
     """Yield validated entries in package order without retaining a bundle in memory."""
     # Explicit active-KEV JOIN: ADP flags never determine membership.
@@ -171,6 +179,9 @@ def bundle_entries(session, distro, release):
             "kev": any(f.is_active is True for f in facts),
             "epss": max((float(f.epss) for f in facts if f.epss is not None), default=None),
             "ref": row.source_url,
+            # Debian tracker urgency (unimportant/low/medium/high/end-of-life);
+            # lets the scanner hide issues the distro itself rates as negligible.
+            "urgency": urgency(row.source_metadata),
         }
         # Retain RPM architecture/module channel facts; never infer one stream from another.
         if distro in ("rocky", "alma"):

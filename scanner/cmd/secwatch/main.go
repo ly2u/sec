@@ -50,7 +50,7 @@ scan 选项：
   --no-exec                不调用任何外部程序（RPM 系统需要调用 rpm，无法使用）
   --no-cache               不读写本地缓存（~/.cache/secwatch）
 
-退出码：0 无紧急问题 · 3 存在 P0/P1 问题 · 1 扫描失败 · 2 参数错误
+退出码：0 无紧急问题 · 3 存在可处理的 P0/P1 问题或已被在野利用的漏洞 · 1 扫描失败 · 2 参数错误
 `
 
 func main() {
@@ -157,7 +157,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	} else {
 		rep.WriteText(stdout)
 	}
-	if rep.Summary.ByPriority["P0"]+rep.Summary.ByPriority["P1"] > 0 {
+	if rep.Urgent() {
 		return exitImportant
 	}
 	return exitOK

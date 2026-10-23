@@ -56,6 +56,9 @@ type Finding struct {
 	Exposed          bool          `json:"exposed"`
 	Priority         string        `json:"priority"`
 	DistroStatus     string        `json:"distro_status,omitempty"`
+	Urgency          string        `json:"urgency,omitempty"`
+	// Minor: the distro rates this negligible (Debian "unimportant").
+	Minor bool `json:"minor,omitempty"`
 }
 
 // Group is one source package version and the binaries built from it.
@@ -86,8 +89,11 @@ type Result struct {
 	SourcesEvaluated int
 	SourcesNoKnown   int // official sources with no entries in the bundle
 	FixedCount       int // vulnerabilities already fixed by the installed version
-	Kernel           KernelState
-	Notes            []string
+	// MinorUnfixed counts unfixed issues the distro rates negligible
+	// (Debian "unimportant" / "end-of-life"); they are not reported.
+	MinorUnfixed int
+	Kernel       KernelState
+	Notes        []string
 }
 
 // KernelState summarises installed vs running kernels.
@@ -361,6 +367,10 @@ func Evaluate(in Input) Result {
 		sort.Strings(order)
 		for _, k := range order {
 			f, counted := evaluateVuln(in, g, k, byVuln[k], ks)
+			if !counted && f.Minor && f.Fix == FixNone && f.Status != Unknown {
+				res.MinorUnfixed++
+				continue
+			}
 			if counted {
 				res.FixedCount++
 				continue
@@ -466,9 +476,34 @@ func statusFor(o system.Origin) Status {
 
 var severityRank = map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "MODERATE": 2, "LOW": 1}
 
+// urgencyRank orders Debian urgencies; unknown values rank as "medium" so an
+// unrecognised rating never hides an issue.
+var urgencyRank = map[string]int{"end-of-life": 0, "unimportant": 0, "low": 1, "medium": 2, "not yet assigned": 2, "high": 3}
+
 func enrich(f *Finding, entries []bundle.Entry) {
 	cves, advs, refs := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	bestUrgency, sawUrgency, allMinor := -1, false, true
+	defer func() {
+		// Minor only if every record that rates the issue calls it negligible.
+		f.Minor = sawUrgency && allMinor
+	}()
 	for _, e := range entries {
+		if e.Urgency != nil && *e.Urgency != "" {
+			u := strings.ToLower(strings.Trim(*e.Urgency, "* "))
+			r, ok := urgencyRank[u]
+			if !ok {
+				r = 2
+			}
+			sawUrgency = true
+			if r > 0 {
+				allMinor = false
+			}
+			if r > bestUrgency {
+				bestUrgency, f.Urgency = r, u
+			}
+		} else {
+			allMinor = false
+		}
 		for _, c := range e.CVEIDs {
 			cves[c] = true
 		}

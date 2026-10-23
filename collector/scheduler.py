@@ -20,10 +20,18 @@ from collector.bundles import generate
 from collector.distros import BASES, RELEASES
 from collector.http import FeedHTTP
 from collector.store import upsert
+from collector.telegram import broadcast
 
 logger = logging.getLogger(__name__)
 LOCK_ID = 0x5345435741544348
-TASKS = {"kev": 3600, "cve:delta": 3600, "osv": 3600, "epss": 86400, "nodejs": 21600}
+TASKS = {
+    "kev": 3600,
+    "cve:delta": 3600,
+    "osv": 3600,
+    "epss": 86400,
+    "nodejs": 21600,
+    "telegram": 300,
+}
 
 
 def utc(value):
@@ -64,6 +72,8 @@ def initialize(engine, now):
 
 
 def perform(engine, task):
+    if task == "telegram":
+        return {"feed": broadcast(engine)}
     http = FeedHTTP()
     try:
         if task == "kev":

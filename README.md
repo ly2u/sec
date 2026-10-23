@@ -5,7 +5,16 @@
 
 **站点**：<https://sec.ly2u.com>（建设中）
 
-> ⚠️ **项目状态：开发中（V0.1）**。目前没有可用的发布版本，请勿在生产环境使用本仓库中的任何代码。
+> ⚠️ **项目状态：V0.1 即将发布**。扫描器发布版本出现在 [Releases](https://github.com/ly2u/sec/releases) 之前，请勿在生产环境使用。
+
+## 使用扫描器
+
+```sh
+curl -fsSL https://sec.ly2u.com/install.sh | sh
+sudo secwatch scan
+```
+
+安装脚本会先校验发布签名（minisign，或 OpenSSL 3）和 SHA-256，再把单个静态二进制复制到 `/usr/local/bin`，不做其他改动。扫描器只读、不上传数据。详细说明、手动校验方法和支持范围见 <https://sec.ly2u.com/scanner>。
 
 ## 它要解决什么问题
 
@@ -37,6 +46,7 @@
 - [实际生成的 PostgreSQL 表结构](docs/database-schema.sql)
 - [小样本容量记录](docs/capacity.md)
 - [架构决策](docs/ARCHITECTURE.md)
+- [生产部署执行清单](docs/DEPLOY.md)
 - [实施计划](docs/CODEX_BRIEF.md)
 - [产品需求（长期愿景）](docs/prd-v0.1.md)
 

@@ -246,13 +246,8 @@ CVSS 只是其中一个维度。不得根据评分推断"可远程提权"之类�
   - 各发行版的修复状态
   - 对应的扫描器规则说明
   - 分页查看历史漏洞
-- **产品注册表** `rules/products/<slug>.yaml`：扫描器 L2 规则和产品页共用这一套产品定义。每个产品在其中声明自己的身份标识，包括：
-  - 各发行版的源码包名（如 Debian 的 `nginx`）
-  - 语言生态包名
-  - CPE 的 `vendor:product`
-  - cvelistV5 中 `affected[].vendor/product` 的匹配规则
-
-  worker 根据这些标识建立"产品 ↔ 漏洞"映射表，并记录每条映射来自哪个标识，以便核查误匹配。
+- **产品注册表** `rules/products/<slug>.json`：扫描器 L2 规则和产品页共用这一套产品定义。每个产品声明 cvelistV5 中 `affected[].vendor/product` 的精确匹配对、检测路径、软件包名等。
+- **产品 ↔ 漏洞映射（已实现）**：直接使用 L2 的 `upstream_advisories` 表，不另建映射表。它只收录 CNA 厂商/产品名精确匹配的记录（另加 Node.js Security WG），因此不会出现 `nginx` 混入 `nginx-ui`、`ingress-nginx` 的问题；每条记录保留来源链接便于核查。代价是：只有 CNA 写明了版本范围的漏洞才出现在产品页，见 `upstream-coverage`。
 - **首批产品页**与 L2 的 12 个产品一致。之后社区每贡献一条产品规则，就自动多出一个产品页。
 
 **V0.1 服务**：`web`、`worker`、`postgres`。只有当 VPS 上没有现有反向代理时，才增加 `caddy`。
@@ -268,8 +263,9 @@ worker 是常驻进程，以 PostgreSQL advisory lock 保证同一数据库只�
 ## D6. 部署与 Cloudflare
 
 1. **接入现有 Caddy（阶段 0 实测结论）**。本机 80/443 端口由 `ly-stack` 项目中的 Caddy 容器占用，Caddyfile 位于 `/opt/ly-stack/Caddyfile`。**不另起公网 Caddy。** 由于 Caddy 运行在容器里，它访问不到宿主机的 `127.0.0.1`，因此采用以下网络方案：
-   - 新建一个独立的外部网络 `secwatch-edge`（`docker network create secwatch-edge`）。
-   - SecWatch 这边**只有 `web` 容器**加入 `secwatch-edge`；`postgres` 和 `worker` 只在 SecWatch 的内部网络中。
+   - 新建一个独立的外部网络 `secwatch-edge`（`docker network create --internal secwatch-edge`：Caddy 仍能连到 web，web 本身不能出网）。
+   - 生产使用独立的 `deploy/compose.prod.yaml`（项目名、镜像名均为 `secwatch`，web 不映射宿主机端口），执行步骤见 `docs/DEPLOY.md`。
+   - SecWatch 这边**只有 `web` 容器**加入 `secwatch-edge`，且 web 只接 `db` 与 `secwatch-edge`；`postgres` 和 `worker` 只在 SecWatch 的内部网络中。
    - 在 `ly-stack` 的 compose 文件中，给 caddy 服务追加 `secwatch-edge` 网络（声明为 `external: true`），然后在 Caddyfile 中新增 `sec.ly2u.com` 站点，反代到 `secwatch-web:8000`。
    - **不要**让 SecWatch 直接加入 `ly-stack_default` 网络。那样会让我们的容器和 ly-stack 的其他服务互通，而且两个项目的生命周期会耦合在一起。
    - 修改 ly-stack 的 compose 文件和 Caddyfile 属于生产变更，只在阶段 5 确认后执行。具体步骤：先运行 `caddy validate`，再执行 `caddy reload`（不中断服务）；如果出问题，用备份的 Caddyfile 回滚。

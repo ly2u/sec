@@ -92,9 +92,25 @@ def test_compose_resources_and_network_isolation():
         if service != "web":
             assert "ports" not in cfg
     assert config["services"]["web"]["ports"] == ["127.0.0.1:18080:8000"]
-    edge = yaml.safe_load((ROOT / "deploy/compose.edge.yaml").read_text())
-    assert list(edge["services"]) == ["web"]
-    assert edge["services"]["web"]["networks"]["secwatch-edge"]["aliases"] == ["secwatch-web"]
+
+
+def test_production_compose_isolation():
+    config = yaml.safe_load((ROOT / "deploy/compose.prod.yaml").read_text())
+    assert config["name"] == "secwatch"
+    services = config["services"]
+    assert services["web"]["image"] == services["worker"]["image"] == "secwatch:current"
+    assert config["networks"]["db"] == {"internal": True}
+    assert config["networks"]["edge"] == {"name": "secwatch-edge", "external": True}
+    expected = {"postgres": ("4g", 2.0), "worker": ("2g", 1.5), "web": ("1g", 1.0)}
+    for service, (memory, cpu) in expected.items():
+        assert (services[service]["mem_limit"], services[service]["cpus"]) == (memory, cpu)
+        assert "ports" not in services[service]
+        assert services[service]["restart"] == "unless-stopped"
+    assert services["postgres"]["networks"] == ["db"]
+    assert services["worker"]["networks"] == ["db", "private"]
+    # web: database and the edge only, reachable as secwatch-web; no internet access.
+    assert services["web"]["networks"] == {"db": {}, "edge": {"aliases": ["secwatch-web"]}}
+    assert all(n.get("name") != "ly-stack_default" for n in config["networks"].values() if n)
 
 
 def test_health_no_store_and_no_connection_details(db, monkeypatch):
@@ -104,7 +120,7 @@ def test_health_no_store_and_no_connection_details(db, monkeypatch):
     assert response.headers["Cache-Control"] == "no-store"
     assert TestClient(app).get("/docs").status_code == 404
     assert TestClient(app).get("/redoc").status_code == 404
-    assert TestClient(app).get("/openapi.json").status_code == 200
+    assert TestClient(app).get("/api/v1/openapi.json").status_code == 200
     monkeypatch.setenv("DATABASE_URL", "sqlite:////nonexistent-directory/db")
     response = TestClient(app).get("/api/v1/health")
     assert response.status_code == 503 and response.json() == {"status": "unavailable"}

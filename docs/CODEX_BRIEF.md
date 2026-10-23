@@ -131,6 +131,8 @@
 
 ## 阶段 4：Web 站点
 
+> **状态（2026-10-24）**：已由 Claude 完成（`apps/server/site.py`、`pages.py`、`api.py`、`templates/`，测试 `tests/test_web.py`）。与下文的差异：产品页直接使用 `upstream_advisories`，没有新建映射表；产品规则是 `rules/products/*.json`。Telegram 广播在 `collector/telegram.py`，每 5 分钟一次。以下保留原始要求供核对。
+
 站点使用 Jinja2 服务端渲染，**V0.1 页面不含任何 JS**，并遵守 ARCHITECTURE.md D5 的前端约束和检索方式。**不实现关键词全文搜索**（站长已决定）。需要以下页面：
 
 - **首页**：编号直达输入框、最近 7 天 KEV 新增、P0/P1 事件、产品页入口、扫描器入口
@@ -155,6 +157,8 @@
 ---
 
 ## 阶段 5：生产部署（需要确认后执行）
+
+> **执行依据**：`docs/DEPLOY.md`（已吸收站长对勘察计划的修改意见）。下文是原始要求。
 
 1. 根据阶段 0 的结论，写出生产部署计划，内容包括：目录 `/opt/secwatch`、反代接入方式（按 ARCHITECTURE.md D6 第 1 条的 `secwatch-edge` 方案）、备份方案、回滚步骤。**等待确认后再执行。** 计划中还必须说明以下几点：
    - 现有 Caddyfile 中的站点证书是怎么获得的（HTTP-01 / DNS-01 / 手动证书）。`sec.ly2u.com` 开启了 Cloudflare 代理，因此 TLS-ALPN-01 验证无法通过；建议改用 Cloudflare Origin Certificate，在 Caddy 中用 `tls <cert> <key>` 指定。

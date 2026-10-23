@@ -19,7 +19,7 @@ web/worker 共用 `secwatch-dev:current`，以 UID 10001 运行，根文件系�
 
 OpenAPI 文档通过 `/openapi.json` 提供。按最新架构的无 JS／无外部资源要求，不启用默认 Swagger UI 或 Redoc 页面。
 
-postgres 只加入 `internal: true` 的项目网络 `secwatch-dev_db`，不直接访问外网。worker 和 web 同时加入 `db`、`private`；`private` 允许采集器访问公开情报源。三个服务均未加入 `ly-stack_default`。开发阶段不创建 `secwatch-edge`，不改 Caddy。`deploy/compose.edge.yaml` 仅为阶段 5 获确认后的接入覆盖文件，只有 web 可加入外部 `secwatch-edge`，别名为 `secwatch-web`。PostgreSQL 使用 `shared_buffers=1GB`。
+postgres 只加入 `internal: true` 的项目网络 `secwatch-dev_db`，不直接访问外网。worker 和 web 同时加入 `db`、`private`；`private` 允许采集器访问公开情报源。三个服务均未加入 `ly-stack_default`。开发阶段不创建 `secwatch-edge`，不改 Caddy。生产环境使用独立的 `deploy/compose.prod.yaml`（见 `docs/DEPLOY.md`），只有 web 加入外部的内部网络 `secwatch-edge`，别名为 `secwatch-web`。PostgreSQL 使用 `shared_buffers=1GB`。
 
 | 服务 | mem_limit | cpus | memswap_limit |
 | --- | --- | --- | --- |

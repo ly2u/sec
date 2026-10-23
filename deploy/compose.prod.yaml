@@ -1,0 +1,102 @@
+# Production (sec.ly2u.com). Stage 5 only, after approval; see docs/DEPLOY.md.
+#
+#   docker network create --internal secwatch-edge     # once, before first start
+#   docker compose --env-file .env -f deploy/compose.prod.yaml up -d
+#
+# Differences from the development file: project and image names are
+# "secwatch", web publishes no host port and reaches the reverse proxy only
+# through the internal secwatch-edge network (alias secwatch-web). Never join
+# ly-stack_default.
+name: secwatch
+
+x-app: &app
+  image: secwatch:current
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  environment:
+    DATABASE_URL: postgresql+psycopg://secwatch:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in project .env}@postgres:5432/secwatch
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: secwatch
+      POSTGRES_DB: secwatch
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in project .env}
+    command: [postgres, -c, shared_buffers=1GB, -c, max_connections=50]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [db]
+    restart: unless-stopped
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 2.0
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U secwatch -d secwatch"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+  web:
+    <<: *app
+    command: [uvicorn, apps.server.main:app, --host, 0.0.0.0, --port, "8000", --workers, "2", --no-server-header]
+    volumes:
+      - bundles:/bundles:ro
+    # Database plus the internal edge network only: web never needs to reach the internet.
+    networks:
+      db: {}
+      edge:
+        aliases: [secwatch-web]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 64
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+  worker:
+    <<: *app
+    command: [python, -m, collector.cli, worker]
+    environment:
+      DATABASE_URL: postgresql+psycopg://secwatch:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in project .env}@postgres:5432/secwatch
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - bundles:/bundles
+      - ../secrets:/run/secwatch-secrets:ro
+    networks: [db, private]
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 1.5
+    pids_limit: 64
+
+volumes:
+  postgres-data:
+  bundles:
+
+networks:
+  db:
+    internal: true
+  private:
+    driver: bridge
+  edge:
+    name: secwatch-edge
+    external: true

@@ -9,7 +9,7 @@ try:
     report = json.load(open(path))
 except Exception as exc:  # noqa: BLE001
     print(f"report is not valid JSON (exit code {code}): {exc}")
-    print(open(path).read()[:2000])
+    print(open(path).read()[:600])
     sys.exit(1)
 
 findings = {f["id"]: f for f in report["findings"]}

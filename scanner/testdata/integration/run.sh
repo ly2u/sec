@@ -44,11 +44,11 @@ check() {
     sh -c "$prep >/dev/null 2>&1; secwatch scan --offline --bundle /data/$file --pubkey /data/key.pub --no-cache"
   set -e
   echo "::endgroup::"
-  if ! python3 "$HERE/assert.py" "$dir/report.json" "$code" "$want" "$pkg"; then
-    echo "FAIL: $name"
-    FAILED=1
+  if msg=$(python3 "$HERE/assert.py" "$dir/report.json" "$code" "$want" "$pkg" 2>&1); then
+    echo "::notice title=$name::ok"
   else
-    echo "ok: $name"
+    echo "::error title=$name::$(echo "$msg" | tr '\n' ' ' | cut -c1-900)"
+    FAILED=1
   fi
 }
 
@@ -79,10 +79,10 @@ docker run --rm -v "$BIN:/usr/local/bin/secwatch:ro" -v "$dir:/data:ro" debian:1
 code=$?
 set -e
 echo "::endgroup::"
-if python3 "$HERE/assert.py" "$dir/report.json" "$code" CONFIRMED_AFFECTED glibc; then
-  echo "ok: minisign interop"
+if msg=$(python3 "$HERE/assert.py" "$dir/report.json" "$code" CONFIRMED_AFFECTED glibc 2>&1); then
+  echo "::notice title=minisign-interop::ok"
 else
-  echo "FAIL: minisign interop"
+  echo "::error title=minisign-interop::$(echo "$msg" | tr '\n' ' ' | cut -c1-900)"
   FAILED=1
 fi
 

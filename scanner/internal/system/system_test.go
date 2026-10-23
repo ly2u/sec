@@ -110,7 +110,7 @@ func debianRoot(t *testing.T) string {
 	write(t, root, "var/lib/dpkg/status", dpkgStatus)
 	lists := "var/lib/apt/lists/"
 	// A Chinese mirror: origin must come from the Release file, not the host name.
-	write(t, root, lists+"mirrors.example.cn_debian_dists_bookworm_InRelease", "Origin: Debian\nLabel: Debian\nSuite: stable\n\nignored body\n")
+	write(t, root, lists+"mirrors.example.cn_debian_dists_bookworm_InRelease", "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: Debian\nLabel: Debian\nSuite: stable\n-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n")
 	write(t, root, lists+"mirrors.example.cn_debian_dists_bookworm_main_binary-amd64_Packages",
 		"Package: openssh-server\nVersion: 1:9.2p1-2+deb12u7\n\nPackage: libssl3\nVersion: 3.0.15-1~deb12u1\n\nPackage: nginx\nVersion: 1.22.1-9+deb12u2\n")
 	write(t, root, lists+"nginx.org_packages_debian_dists_bookworm_InRelease", "Origin: nginx\nLabel: nginx\n")
@@ -213,7 +213,7 @@ func TestCompressedAptLists(t *testing.T) {
 		write(t, root, "etc/os-release", "ID=debian\nVERSION_ID=\"12\"\n")
 		write(t, root, "var/lib/dpkg/status", "Package: libssl3\nStatus: install ok installed\nSource: openssl\nVersion: 3.0.15-1~deb12u1\n")
 		lists := "var/lib/apt/lists/"
-		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_InRelease", "Origin: Debian\n")
+		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_InRelease", "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: Debian\nLabel: Debian-Security\n")
 		write(t, root, lists+"deb.debian.org_debian_dists_bookworm_main_binary-amd64_Packages.diff_Index", "SHA256-Current: x\n")
 		var buf bytes.Buffer
 		var w io.WriteCloser
@@ -237,5 +237,15 @@ func TestCompressedAptLists(t *testing.T) {
 		if len(inv.Notes) != 0 {
 			t.Errorf("%s: pdiff index must not be reported as skipped: %v", suffix, inv.Notes)
 		}
+	}
+}
+
+func TestParseReleaseOrigin(t *testing.T) {
+	inRelease := "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: Ubuntu\nLabel: Ubuntu\nSuite: noble-security\nMD5Sum:\n abc 123 main/binary-amd64/Packages\n-----BEGIN PGP SIGNATURE-----\n\nxyz\n-----END PGP SIGNATURE-----\n"
+	if o, l := parseReleaseOrigin([]byte(inRelease)); o != "Ubuntu" || l != "Ubuntu" {
+		t.Fatalf("clear-signed InRelease: got %q %q", o, l)
+	}
+	if o, _ := parseReleaseOrigin([]byte("Origin: nginx\nLabel: nginx\n")); o != "nginx" {
+		t.Fatalf("plain Release: got %q", o)
 	}
 }

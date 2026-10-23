@@ -59,7 +59,7 @@ Status: install ok installed
 Version: 1.26.1-1~bookworm
 `)
 	lists := "var/lib/apt/lists/"
-	put(t, root, lists+"deb.debian.org_debian_dists_bookworm_InRelease", "Origin: Debian\nLabel: Debian\n")
+	put(t, root, lists+"deb.debian.org_debian_dists_bookworm_InRelease", "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: Debian\nLabel: Debian\n")
 	put(t, root, lists+"deb.debian.org_debian_dists_bookworm_main_binary-amd64_Packages",
 		"Package: openssh-server\nVersion: 1:9.2p1-2+deb12u3\n\nPackage: curl\nVersion: 7.88.1-10+deb12u12\n\nPackage: libcurl4\nVersion: 7.88.1-10+deb12u12\n\nPackage: nginx\nVersion: 1.22.1-9+deb12u2\n")
 	put(t, root, lists+"nginx.org_packages_debian_dists_bookworm_InRelease", "Origin: nginx\n")

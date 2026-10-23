@@ -146,23 +146,45 @@ func releaseOrigin(h Host, packagesFile string) (string, string) {
 		if err != nil {
 			continue
 		}
-		origin, label := "", ""
-		sc := bufio.NewScanner(bytes.NewReader(data))
-		for sc.Scan() {
-			line := sc.Text()
-			if line == "" {
-				break // end of the Release header paragraph
-			}
-			if v, ok := strings.CutPrefix(line, "Origin:"); ok {
-				origin = strings.TrimSpace(v)
-			}
-			if v, ok := strings.CutPrefix(line, "Label:"); ok {
-				label = strings.TrimSpace(v)
-			}
-		}
-		return origin, label
+		return parseReleaseOrigin(data)
 	}
 	return "", ""
+}
+
+// parseReleaseOrigin reads Origin/Label from a Release or InRelease file.
+// InRelease is PGP clear-signed: an armor header ("Hash: SHA512") and a blank
+// line precede the actual fields, which end at the next blank line.
+func parseReleaseOrigin(data []byte) (string, string) {
+	origin, label := "", ""
+	sc := bufio.NewScanner(bytes.NewReader(data))
+	inArmor, started := false, false
+	for sc.Scan() {
+		line := strings.TrimRight(sc.Text(), "\r")
+		if strings.HasPrefix(line, "-----BEGIN PGP SIGNED MESSAGE-----") {
+			inArmor = true
+			continue
+		}
+		if inArmor {
+			if line == "" {
+				inArmor = false
+			}
+			continue
+		}
+		if line == "" {
+			if started {
+				break // end of the Release field paragraph
+			}
+			continue
+		}
+		started = true
+		if v, ok := strings.CutPrefix(line, "Origin:"); ok {
+			origin = strings.TrimSpace(v)
+		}
+		if v, ok := strings.CutPrefix(line, "Label:"); ok {
+			label = strings.TrimSpace(v)
+		}
+	}
+	return origin, label
 }
 
 func loadAptIndex(h Host) *aptIndex {

@@ -79,6 +79,12 @@ Version: 1.26.1-1~bookworm
 Package: mytool
 Status: install ok installed
 Version: 0.1
+
+Package: linux-image-6.1.27-custom
+Status: install ok installed
+Architecture: amd64
+Source: linux-upstream
+Version: 6.1.27-custom-1
 `
 
 func TestParseDpkgStatus(t *testing.T) {
@@ -90,8 +96,8 @@ func TestParseDpkgStatus(t *testing.T) {
 	for _, p := range pkgs {
 		got[p.Name] = p
 	}
-	if len(pkgs) != 5 {
-		t.Fatalf("expected 5 installed packages (config-files excluded), got %d", len(pkgs))
+	if len(pkgs) != 6 {
+		t.Fatalf("expected 6 installed packages (config-files excluded), got %d", len(pkgs))
 	}
 	if p := got["libssl3"]; p.Source != "openssl" || p.SourceVersion != "3.0.15-1~deb12u1" {
 		t.Errorf("libssl3 source mapping wrong: %+v", p)
@@ -112,7 +118,8 @@ func debianRoot(t *testing.T) string {
 	// A Chinese mirror: origin must come from the Release file, not the host name.
 	write(t, root, lists+"mirrors.example.cn_debian_dists_bookworm_InRelease", "-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: Debian\nLabel: Debian\nSuite: stable\n-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n")
 	write(t, root, lists+"mirrors.example.cn_debian_dists_bookworm_main_binary-amd64_Packages",
-		"Package: openssh-server\nVersion: 1:9.2p1-2+deb12u7\n\nPackage: libssl3\nVersion: 3.0.15-1~deb12u1\n\nPackage: nginx\nVersion: 1.22.1-9+deb12u2\n")
+		"Package: openssh-server\nVersion: 1:9.2p1-2+deb12u7\n\nPackage: libssl3\nVersion: 3.0.15-1~deb12u1\n\nPackage: nginx\nVersion: 1.22.1-9+deb12u2\n\n"+
+			"Package: linux-image-6.1.0-40-amd64\nSource: linux-signed-amd64 (6.1.158+1)\nVersion: 6.1.158-1\n")
 	write(t, root, lists+"nginx.org_packages_debian_dists_bookworm_InRelease", "Origin: nginx\nLabel: nginx\n")
 	write(t, root, lists+"nginx.org_packages_debian_dists_bookworm_nginx_binary-amd64_Packages",
 		"Package: nginx\nVersion: 1.26.2-1~bookworm\n")
@@ -136,6 +143,10 @@ func TestAptOriginClassification(t *testing.T) {
 		"openssh-server": Official,   // outdated official: name only in official lists
 		"nginx":          ThirdParty, // newer than Debian's nginx: from nginx.org
 		"mytool":         ThirdParty, // in no list at all
+		// Old kernel ABI: its binary name left the archive, its source did not.
+		"linux-image-6.1.0-25-amd64": Official,
+		// A self-built kernel comes from a source the archive does not build.
+		"linux-image-6.1.27-custom": ThirdParty,
 	}
 	for name, w := range want {
 		if got[name] != w {

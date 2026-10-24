@@ -87,9 +87,11 @@ func TestScanEndToEndText(t *testing.T) {
 		t.Fatalf("KEV finding must give exit code 3, got %d\nstderr: %s\n%s", code, stderr.String(), out)
 	}
 	for _, want := range []string{
-		"[P0 立即处理] curl  7.88.1-10+deb12u5 → 7.88.1-10+deb12u12",
-		"已被在野利用（CISA KEV）",
-		"sudo apt-get update && sudo apt-get install --only-upgrade curl libcurl4",
+		"== 立即处理（P0）：1 个软件包 ==",
+		"curl  7.88.1-10+deb12u5 → 7.88.1-10+deb12u12",
+		"CVE-2025-1111，已被在野利用，最高 CVSS 9.8",
+		"详情：https://sec.ly2u.com/cve/CVE-2025-1111",
+		"sudo apt-get update && sudo apt-get upgrade --with-new-pkgs",
 		"未覆盖：来自第三方源的软件包",
 		"nginx 1.26.1-1~bookworm",
 	} {
@@ -101,6 +103,14 @@ func TestScanEndToEndText(t *testing.T) {
 		t.Errorf("patched backport and third-party nginx must not be reported\n%s", out)
 	}
 	t.Log("\n" + out)
+
+	// --all keeps one exact command per package.
+	stdout.Reset()
+	scan([]string{"--root", root, "--offline", "--bundle", path, "--pubkey", pub, "--no-cache", "--all"}, &stdout, &stderr)
+	if all := stdout.String(); !strings.Contains(all, "sudo apt-get update && sudo apt-get install --only-upgrade curl libcurl4") ||
+		!strings.Contains(all, "已被在野利用（CISA KEV）") {
+		t.Errorf("--all must list per-package commands\n%s", all)
+	}
 }
 
 func TestScanEndToEndJSON(t *testing.T) {
@@ -287,7 +297,7 @@ func TestL2EndToEnd(t *testing.T) {
 		"Docker Engine  29.8.2 → 29.9.0",
 		"sudo apt-get update && sudo apt-get install --only-upgrade docker-ce（从原第三方软件源升级）",
 		"== 非包管理安装的软件 ==",
-		"第三方软件包（未覆盖）0 个",
+		"单独升级不是通过软件包安装的软件",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)

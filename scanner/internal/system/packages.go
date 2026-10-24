@@ -124,9 +124,13 @@ type aptIndex struct {
 	labels   map[string]string            // name+"\x00"+version -> label
 	official map[string][]string          // name -> versions in official lists
 	third    map[string]bool              // name present in a third-party list
-	lists    int
-	skipped  int
-	esm      bool // Ubuntu Pro (ESM) repositories are configured
+	// Source packages the official archive currently builds. Kernel images
+	// (linux-image-6.1.0-9-amd64) get a new binary name with every ABI bump,
+	// so an old official kernel is found by its source, not its name.
+	officialSrc map[string]bool
+	lists       int
+	skipped     int
+	esm         bool // Ubuntu Pro (ESM) repositories are configured
 }
 
 var officialOrigins = map[string]bool{
@@ -190,7 +194,7 @@ func parseReleaseOrigin(data []byte) (string, string) {
 func loadAptIndex(h Host) *aptIndex {
 	idx := &aptIndex{
 		versions: map[string]map[string]Origin{}, labels: map[string]string{},
-		official: map[string][]string{}, third: map[string]bool{},
+		official: map[string][]string{}, third: map[string]bool{}, officialSrc: map[string]bool{},
 	}
 	dir := h.Path("var/lib/apt/lists")
 	entries, err := os.ReadDir(dir)
@@ -260,10 +264,17 @@ func (idx *aptIndex) addList(h Host, dir, name string) {
 		idx.esm = true
 	}
 	idx.lists++
-	_ = parseStanzas(reader, map[string]bool{"Package": true, "Version": true}, func(s stanza) {
+	_ = parseStanzas(reader, map[string]bool{"Package": true, "Version": true, "Source": true}, func(s stanza) {
 		n, v := s["Package"], s["Version"]
 		if n == "" || v == "" {
 			return
+		}
+		if cls == Official {
+			src, _, _ := strings.Cut(s["Source"], " ")
+			if src == "" {
+				src = n
+			}
+			idx.officialSrc[src] = true
 		}
 		if idx.versions[n] == nil {
 			idx.versions[n] = map[string]Origin{}
@@ -297,6 +308,10 @@ func (idx *aptIndex) classify(p Package) (Origin, string) {
 		return Official, "官方源（已有更新版本）"
 	case len(off) == 0 && inThird:
 		return ThirdParty, "第三方源"
+	case len(off) == 0 && !inThird && idx.officialSrc[p.Source]:
+		// Renamed binary of a source the official archive still builds
+		// (e.g. an old kernel ABI package): an outdated official package.
+		return Official, "官方源（旧版本，软件源中已更名）"
 	case len(off) == 0 && !inThird:
 		return ThirdParty, "本地安装或已移除的软件源"
 	}

@@ -154,7 +154,7 @@ func (s *Source) Fetch(ctx context.Context, distro, release string) (*Result, er
 	if err != nil {
 		return nil, err
 	}
-	warnings = append(warnings, "数据清单（manifest）尚未签名，仅数据包本身经过签名校验；无法排除被替换为旧版数据包的可能")
+	warnings = append(warnings, WarnManifestUnsigned)
 	entry, ok := manifest.Bundles[slug]
 	if !ok {
 		return nil, fmt.Errorf("数据源暂不提供 %s 的数据包", slug)
@@ -220,3 +220,7 @@ func shortErr(err error) string {
 	}
 	return msg
 }
+
+// WarnManifestUnsigned is the note added while the data source does not sign
+// its manifest; the default report hides it (it is shown with --all).
+const WarnManifestUnsigned = "数据清单（manifest）尚未签名，仅数据包本身经过签名校验；无法排除被替换为旧版数据包的可能"

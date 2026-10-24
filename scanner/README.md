@@ -27,9 +27,10 @@ L2（宝塔、源码编译、nvm 等非包管理安装的上游版本检测）�
 ## 用法
 
 ```
-secwatch scan                       # 在线获取数据包并扫描本机（建议以 root 运行）
+secwatch scan                       # 一屏摘要：结论、表格、修复命令（建议以 root 运行）
 secwatch scan --format json         # 机器可读输出
-secwatch scan --all                 # 展开全部结果
+secwatch scan --pkg openssh         # 只看一个软件包：全部漏洞、升级与验证命令
+secwatch scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）
 secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 ```
 

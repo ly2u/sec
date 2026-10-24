@@ -87,13 +87,11 @@ func TestScanEndToEndText(t *testing.T) {
 		t.Fatalf("KEV finding must give exit code 3, got %d\nstderr: %s\n%s", code, stderr.String(), out)
 	}
 	for _, want := range []string{
-		"== 立即处理（P0）：1 个软件包 ==",
-		"curl  7.88.1-10+deb12u5 → 7.88.1-10+deb12u12",
-		"CVE-2025-1111，已被在野利用，最高 CVSS 9.8",
-		"详情：https://sec.ly2u.com/cve/CVE-2025-1111",
+		"✗ 高风险：1 个软件包有安全更新，1 个需要尽快处理，其中 1 个的漏洞已被在野利用",
+		"  P0 立即  curl         1  已被在野利用 · 严重 9.8",
 		"sudo apt-get update && sudo apt-get upgrade --with-new-pkgs",
-		"未覆盖：来自第三方源的软件包",
-		"nginx 1.26.1-1~bookworm",
+		"未检查：nginx（第三方源，请关注其官方公告）",
+		"secwatch scan --pkg curl",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q\n----\n%s", want, out)
@@ -291,16 +289,34 @@ func TestL2EndToEnd(t *testing.T) {
 		t.Fatalf("scan failed: %s", stderr.String())
 	}
 	for _, want := range []string{
-		"Node.js  24.22.0 → 24.22.1",
-		"位置：/root/.nvm/versions/node/v24.22.0/bin/node（nvm）",
-		"nvm install 24.22.1",
-		"Docker Engine  29.8.2 → 29.9.0",
-		"sudo apt-get update && sudo apt-get install --only-upgrade docker-ce（从原第三方软件源升级）",
-		"== 非包管理安装的软件 ==",
-		"单独升级不是通过软件包安装的软件",
+		"  P2 计划  Docker Engine       1  严重 9.2 · 第三方源",
+		"  P2 计划  Node.js             1  严重 9.2 · 需单独升级",
+		"1. sudo apt-get update && sudo apt-get upgrade --with-new-pkgs",
+		"2. secwatch scan --pkg Node.js",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "异常字符") {
+		t.Errorf("an install path is not a package name\n%s", text)
+	}
+	detail := func(args ...string) string {
+		var o, e bytes.Buffer
+		scan(append([]string{"--root", root, "--offline", "--bundle", distro, "--upstream-bundle", upstream,
+			"--pubkey", pub, "--no-cache"}, args...), &o, &e)
+		return o.String()
+	}
+	for args, wants := range map[string][]string{
+		"--pkg Node.js":   {"Node.js  24.22.0 → 24.22.1", "位置  /root/.nvm/versions/node/v24.22.0/bin/node（nvm）", "nvm install 24.22.1"},
+		"--pkg docker-ce": {"Docker Engine  29.8.2 → 29.9.0", "sudo apt-get update && sudo apt-get install --only-upgrade docker-ce（从原第三方软件源升级）"},
+		"--all":           {"== 非包管理安装的软件 ==", "单独升级不是通过软件包安装的软件"},
+	} {
+		out := detail(strings.SplitN(args, " ", 2)...)
+		for _, want := range wants {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s missing %q\n%s", args, want, out)
+			}
 		}
 	}
 	if strings.Contains(text, "未覆盖：来自第三方源的软件包") {

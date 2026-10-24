@@ -41,7 +41,9 @@ const usage = `用法：
 
 scan 选项：
   --format table|json      输出格式（默认 table）
-  --all                    显示全部结果（包括低优先级与已截断的列表）
+  --pkg NAME               只看一个软件包：全部漏洞、修复与验证命令（源码包名、软件包名或软件名）
+  --all                    显示完整报告（全部漏洞、每个软件包的命令与参考链接）
+  --no-color               不使用颜色（也可设置环境变量 NO_COLOR）
   --offline                不联网，使用 --bundle 指定的数据包
   --bundle FILE            离线数据包（*.json.zst），签名默认为 FILE.minisig
   --signature FILE         离线数据包的签名文件
@@ -78,6 +80,8 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	format := fs.String("format", "table", "")
 	all := fs.Bool("all", false, "")
+	only := fs.String("pkg", "", "")
+	noColor := fs.Bool("no-color", false, "")
 	offline := fs.Bool("offline", false, "")
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
@@ -189,6 +193,10 @@ func scan(args []string, stdout, stderr io.Writer) int {
 			return fail("输出失败", err)
 		}
 	} else {
+		if *only != "" {
+			rep.FilterPackage(*only)
+		}
+		rep.Color = !*noColor && colorTerminal(stdout)
 		rep.WriteText(stdout)
 	}
 	if rep.Urgent() {
@@ -264,4 +272,14 @@ func cacheDir() string {
 		return ""
 	}
 	return filepath.Join(dir, "secwatch")
+}
+
+// colorTerminal reports whether w is a terminal that should get colours.
+func colorTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }

@@ -27,37 +27,34 @@ sha256sum -c --ignore-missing SHA256SUMS</code></pre>
 <p class="small">也可以用 GitHub 的构建来源证明确认程序由本仓库的公开流程构建：<code>gh attestation verify secwatch-linux-amd64 --repo ly2u/sec</code></p>
 
 <h2>使用</h2>
-<pre><code>sudo secwatch scan              # 中文报告
-sudo secwatch scan --all        # 包括低优先级和发行版评为影响轻微的项目
-sudo secwatch scan --format json  # 给脚本和监控用</code></pre>
+<pre><code>sudo secwatch scan                 # 一屏看完：结论、要处理的软件包、修复命令
+sudo secwatch scan --pkg openssh   # 只看一个软件包：全部漏洞、升级和验证命令
+sudo secwatch scan --all           # 完整报告：全部结果、参考链接、说明
+sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 <p>用 root 运行才能完整检查：哪些服务对公网监听、升级后哪些进程还在使用旧的库、内核是否需要重启。非 root 也能运行，但这几项会缺失。</p>
 
 <h3>示例输出（节选）</h3>
-<p>一台很久没升级的 Debian 12：先给结论，再列出最需要处理的软件包，最后告诉你下一步怎么做。</p>
-<pre><code>LY2U SecWatch 漏洞自检 v0.1.1（只读检查，未修改系统）
-系统  Debian GNU/Linux 12 (bookworm)，内核 6.1.0-9-amd64
-数据  2026-10-24 04:11 UTC 生成，在线获取，签名密钥 D7B7CA69ADC798BC 校验通过
+<p>一台很久没升级的 Debian 12：一行结论，一张表列出最该处理的软件包和原因，最后是照着执行的修复命令。想看细节，再用 <code>--pkg</code> 或 <code>--all</code>。</p>
+<pre><code>LY2U SecWatch v0.1.2 · Debian GNU/Linux 12 (bookworm) · 内核 6.1.0-9-amd64
+已检查 729 个软件包 · 数据 2026-10-24 04:11 UTC（在线获取，签名已校验）· 只读，未修改系统、未上传数据
 
-== 结论 ==
-  ✗ 53 个软件包有可修复的安全漏洞：立即处理 6 个（3 个已被在野利用）、尽快处理 6 个、计划处理 41 个
-    修复方法见本报告最后的“下一步”。
+✗ 高风险：70 个软件包有安全更新，13 个需要尽快处理，其中 4 个的漏洞已被在野利用
 
-== 立即处理（P0）：6 个软件包 ==
-  inetutils  2:2.4-2 → 2:2.4-2+deb12u3
-    CVE-2026-24061 等 3 个漏洞，已被在野利用，最高 CVSS 9.8，被利用概率 99%
-    详情：https://sec.ly2u.com/cve/CVE-2026-24061
-  openssh  1:9.2p1-2 → 1:9.2p1-2+deb12u10
-    CVE-2024-6387 等 6 个漏洞，最高 CVSS 9.8，被利用概率 100%，所在服务对外监听
-    详情：https://sec.ly2u.com/cve/CVE-2024-6387
+  优先级   软件包     漏洞数  风险要点
+  P0 立即  linux        7887  已被在野利用 · 利用概率 94% · 严重 10.0 · 需重启
+  P0 立即  inetutils       5  已被在野利用 · 利用概率 99% · 严重 9.8
+  P0 立即  openssh        17  利用概率 100% · 严重 9.8 · 对外服务
+  P1 尽快  Node.js        35  利用概率 25% · 严重 9.2 · 第三方源
   ……
+  另有 42 个计划处理、15 个低优先级的软件包未列出（secwatch scan --all 查看）
 
-== 下一步 ==
-  1. 安装全部安全更新：
-       sudo apt-get update &amp;&amp; sudo apt-get upgrade --with-new-pkgs
-  2. 重启服务器，让新内核和所有服务生效：sudo reboot
-  3. 再次运行 secwatch scan 确认已全部修复
-  想只升级列出的软件包，或查看每个漏洞的验证命令和参考链接：secwatch scan --all</code></pre>
-<p>加上 <code>--all</code> 会列出每个软件包单独的升级命令、验证命令和参考链接。</p>
+还需留意
+  · 未检查：caddy（第三方源，请关注其官方公告）；容器内的 mariadbd（可用 trivy image 扫描镜像）
+
+怎么修（依次执行）
+  1. sudo apt-get update &amp;&amp; sudo apt-get upgrade --with-new-pkgs  # 安装全部安全更新
+  2. sudo reboot                                                  # 让新内核和已升级的服务生效
+  3. secwatch scan                                                # 再查一次，确认已修复</code></pre>
 
 <h3>优先级</h3>
 <div class="tablewrap">

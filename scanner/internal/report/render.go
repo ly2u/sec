@@ -167,6 +167,15 @@ func (s safeWriter) Write(p []byte) (int, error) {
 // next steps last (where the eye lands when the command finishes). --all
 // shows every finding with its own commands and references.
 func (r *Report) WriteText(out io.Writer) {
+	t := newTerm(out, r.Color)
+	switch {
+	case r.only != "":
+		r.writePackage(t)
+		return
+	case !r.showAll:
+		r.writeSummary(t)
+		return
+	}
 	w := safeWriter{out}
 	fmt.Fprintf(w, "LY2U SecWatch 漏洞自检 %s（只读检查，未修改系统）\n", r.Scanner)
 	sys := r.OS.Name
@@ -257,12 +266,7 @@ func (r *Report) WriteText(out io.Writer) {
 		fmt.Fprintf(w, "  其中 %d 项为“可能受影响”（软件包来源无法核实，见末尾说明）\n", n)
 	}
 
-	var upgradeAll []string
-	if r.showAll {
-		upgradeAll = r.writeDetailed(w)
-	} else {
-		r.writeCompact(w, fixable)
-	}
+	upgradeAll := r.writeDetailed(w)
 
 	pro := r.group(func(f match.Finding) bool { return f.Fix == match.FixSubscription && (r.showAll || f.Priority != "P3") })
 	if len(pro) > 0 {
@@ -467,56 +471,11 @@ func (r *Report) writeDetailed(w io.Writer) []string {
 			if b := badges(g); b != "" {
 				fmt.Fprintf(w, "  风险：%s\n", b)
 			}
-			if g.l2 {
-				f := g.findings[0]
-				label := l2.MethodLabel[f.Method]
-				if f.Path != "" {
-					fmt.Fprintf(w, "  位置：%s（%s）\n", f.Path, label)
-				} else {
-					fmt.Fprintf(w, "  来源：%s（%s）\n", strings.Join(f.Binaries, " "), label)
-				}
-				if f.Method == "package" {
-					if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
-						fmt.Fprintf(w, "  修复：%s（从原第三方软件源升级）\n", r.upgradeCommand(pkgs))
-						upgradeAll = append(upgradeAll, pkgs...)
-					}
-				} else if f.Guidance != "" {
-					fmt.Fprintf(w, "  修复：%s\n", f.Guidance)
-				}
-				if g.exposed {
-					fmt.Fprintf(w, "  注意：该程序正在对外提供服务，升级后需重启才会生效\n")
-				}
-				for _, ref := range refsOf(g, 2) {
-					fmt.Fprintf(w, "  参考：%s\n", ref)
-				}
-				continue
+			lines, bins := r.remedy(g)
+			for _, l := range lines {
+				fmt.Fprintf(w, "  %s：%s\n", l[0], l[1])
 			}
-			bins, bad := safeNames(g.binaries)
-			reboot := false
-			for _, f := range g.findings {
-				reboot = reboot || f.Fix == match.FixReboot || f.Kernel
-			}
-			if reboot && g.findings[0].Kernel {
-				allInstalled := true
-				for _, f := range g.findings {
-					allInstalled = allInstalled && f.Fix == match.FixReboot
-				}
-				if allInstalled {
-					fmt.Fprintf(w, "  修复：已安装修复后的内核，重启系统后生效：sudo reboot（建议在维护窗口执行）\n")
-				} else {
-					fmt.Fprintf(w, "  修复：升级内核后重启：%s && sudo reboot\n", r.upgradeKernelCommand())
-				}
-			} else if len(bins) > 0 {
-				fmt.Fprintf(w, "  修复：%s\n", r.upgradeCommand(bins))
-				fmt.Fprintf(w, "  验证：%s（应不低于 %s）\n", r.verifyCommand(bins), g.target)
-				upgradeAll = append(upgradeAll, bins...)
-				if g.exposed || r.stalePackages[g.pkg] {
-					fmt.Fprintf(w, "  注意：正在运行的服务加载了它，升级后需重启相应服务才会生效\n")
-				}
-			}
-			if len(bad) > 0 {
-				fmt.Fprintf(w, "  注意：以下包名含异常字符，未写入命令，请手动核实：%s\n", strings.Join(bad, " "))
-			}
+			upgradeAll = append(upgradeAll, bins...)
 			for _, ref := range refsOf(g, 2) {
 				fmt.Fprintf(w, "  参考：%s\n", ref)
 			}
@@ -525,87 +484,6 @@ func (r *Report) writeDetailed(w io.Writer) []string {
 
 	return upgradeAll
 }
-
-// writeCompact shows P0/P1 packages in two or three lines each and P2 as one
-// line per package; the commands are summarised in the next steps.
-func (r *Report) writeCompact(w io.Writer, fixable []*pkgGroup) {
-	byLevel := map[string][]*pkgGroup{}
-	for _, g := range fixable {
-		byLevel[g.priority] = append(byLevel[g.priority], g)
-	}
-	titles := []struct{ level, title string }{
-		{"P0", "立即处理"}, {"P1", "尽快处理"}, {"P2", "计划处理"},
-	}
-	for _, t := range titles {
-		groups := byLevel[t.level]
-		if len(groups) == 0 {
-			continue
-		}
-		section(w, fmt.Sprintf("%s（%s）：%d 个软件包", t.title, t.level, len(groups)))
-		width := 0
-		for _, g := range groups {
-			if n := len(g.pkg); n > width {
-				width = n
-			}
-		}
-		if width > 16 {
-			width = 16 // keep one-line entries within an 80-column terminal
-		}
-		limit := len(groups)
-		if t.level == "P2" && limit > compactP2 {
-			limit = compactP2
-		}
-		for _, g := range groups[:limit] {
-			if t.level == "P2" && !g.l2 {
-				fmt.Fprintf(w, "  %-*s → %s  %s\n", width, g.pkg, g.target, shortFacts(g))
-				continue
-			}
-			fmt.Fprintf(w, "  %s  %s → %s\n", g.pkg, g.installed, g.target)
-			fmt.Fprintf(w, "    %s\n", compactFacts(g))
-			if g.l2 {
-				// Not fixed by a system upgrade (or only from its own repository): say how.
-				f := g.findings[0]
-				if f.Path != "" {
-					fmt.Fprintf(w, "    位置：%s（%s）\n", f.Path, l2.MethodLabel[f.Method])
-				}
-				if f.Method == "package" {
-					if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
-						fmt.Fprintf(w, "    修复：%s（从原第三方软件源升级）\n", r.upgradeCommand(pkgs))
-					}
-				} else if f.Guidance != "" {
-					fmt.Fprintf(w, "    修复：%s\n", f.Guidance)
-				}
-			}
-			for _, f := range g.findings {
-				if f.Kernel {
-					fmt.Fprintln(w, "    内核：升级后需要重启系统才会生效")
-					break
-				}
-			}
-			if id := headline(g); id != "" {
-				fmt.Fprintf(w, "    详情：%s%s\n", siteCVE, id)
-			}
-		}
-		if limit < len(groups) {
-			fmt.Fprintf(w, "  …… 另有 %d 个，使用 secwatch scan --all 查看\n", len(groups)-limit)
-		}
-	}
-	if low := len(byLevel["P3"]); low > 0 {
-		fmt.Fprintf(w, "\n另有 %d 个软件包只有低优先级问题，未展开（--all 查看）。\n", low)
-	}
-	var odd []string
-	for _, g := range fixable {
-		if _, bad := safeNames(g.binaries); len(bad) > 0 {
-			odd = append(odd, bad...)
-		}
-	}
-	if len(odd) > 0 {
-		fmt.Fprintf(w, "\n注意：以下软件包名称含异常字符，可能被篡改，请人工核实：%s\n", strings.Join(dedupe(odd), " "))
-	}
-}
-
-// compactP2 caps the one-line P2 list in the default view.
-const compactP2 = 15
 
 // siteCVE links a CVE to its page on the SecWatch site.
 const siteCVE = "https://sec.ly2u.com/cve/"
@@ -627,66 +505,6 @@ func headline(g *pkgGroup) string {
 		}
 	}
 	return best
-}
-
-// compactFacts: "CVE-2024-6387 等 6 个漏洞，已被在野利用，最高 CVSS 9.8，EPSS 100%，对外监听".
-func compactFacts(g *pkgGroup) string {
-	n := 0
-	seen := map[string]bool{}
-	for _, f := range g.findings {
-		key := f.ID
-		if len(f.CVEs) == 1 {
-			key = f.CVEs[0]
-		}
-		if !seen[key] {
-			seen[key] = true
-			n++
-		}
-	}
-	var b []string
-	if id := headline(g); id != "" && n > 1 {
-		b = append(b, fmt.Sprintf("%s 等 %d 个漏洞", id, n))
-	} else if id != "" {
-		b = append(b, id)
-	} else {
-		b = append(b, fmt.Sprintf("%d 个漏洞", n))
-	}
-	if g.kev {
-		b = append(b, "已被在野利用")
-	}
-	if g.maxCVSS >= 0 {
-		b = append(b, fmt.Sprintf("最高 CVSS %.1f", g.maxCVSS))
-	}
-	var epss float64
-	for _, f := range g.findings {
-		if f.EPSS != nil && *f.EPSS > epss {
-			epss = *f.EPSS
-		}
-	}
-	if epss >= 0.1 {
-		b = append(b, fmt.Sprintf("被利用概率 %.0f%%", epss*100))
-	}
-	if g.exposed {
-		b = append(b, "所在服务对外监听")
-	}
-	return strings.Join(b, "，")
-}
-
-// shortFacts is the one-line P2 summary: "11 个漏洞，最高 CVSS 10.0".
-func shortFacts(g *pkgGroup) string {
-	seen := map[string]bool{}
-	for _, f := range g.findings {
-		key := f.ID
-		if len(f.CVEs) == 1 {
-			key = f.CVEs[0]
-		}
-		seen[key] = true
-	}
-	out := fmt.Sprintf("%d 个漏洞", len(seen))
-	if g.maxCVSS >= 0 {
-		out += fmt.Sprintf("，最高 CVSS %.1f", g.maxCVSS)
-	}
-	return out
 }
 
 // writeNextSteps ends the report with what to do, in order.
@@ -731,9 +549,6 @@ func (r *Report) writeNextSteps(w io.Writer, fixable []*pkgGroup) {
 	}
 	step++
 	fmt.Fprintf(w, "  %d. 再次运行 secwatch scan 确认已全部修复\n", step)
-	if !r.showAll {
-		fmt.Fprintln(w, "  想只升级列出的软件包，或查看每个漏洞的验证命令和参考链接：secwatch scan --all")
-	}
 }
 
 var processName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)

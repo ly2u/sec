@@ -50,7 +50,10 @@ type Report struct {
 	kind          version.Kind
 	distro        string
 	showAll       bool
+	only          string // --pkg: show one package in full
 	stalePackages map[string]bool
+	// Color enables ANSI styles in the text report (set for colour terminals).
+	Color bool `json:"-"`
 }
 
 type OSInfo struct {

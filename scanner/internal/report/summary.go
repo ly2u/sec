@@ -169,6 +169,17 @@ func reasons(g *pkgGroup) string {
 	if hasKernel(g) {
 		b = append(b, "需重启")
 	}
+	if g.goProg {
+		own := false
+		for _, f := range g.findings {
+			own = own || f.Component == ""
+		}
+		if !own {
+			b = append(b, "Go 程序内置组件")
+		} else {
+			b = append(b, "Go 程序")
+		}
+	}
 	if g.l2 {
 		if g.findings[0].Method == "package" {
 			b = append(b, "第三方源")
@@ -177,7 +188,7 @@ func reasons(g *pkgGroup) string {
 		}
 	}
 	for _, f := range g.findings {
-		if f.Status == match.PotentiallyAffected {
+		if f.Status == match.PotentiallyAffected && !g.goProg {
 			b = append(b, "来源未核实")
 			break
 		}
@@ -553,7 +564,11 @@ func (r *Report) writePackage(t term) {
 	for _, g := range fixable {
 		fmt.Fprintln(t)
 		t.paint(cBold, g.pkg)
-		fmt.Fprintf(t, "  %s → %s  ", g.installed, g.target)
+		if g.target != "" {
+			fmt.Fprintf(t, "  %s → %s  ", g.installed, g.target)
+		} else {
+			fmt.Fprintf(t, "  %s  ", g.installed)
+		}
 		t.paint(prioColor[g.priority], g.priority+" "+priorityLabel[g.priority])
 		fmt.Fprintln(t)
 		if s := reasons(g); s != "" {
@@ -617,6 +632,9 @@ func (r *Report) writeVulnList(t term, fs []match.Finding, title string) {
 		if f.FixedVersion != "" && isFixable(f) {
 			b = append(b, "修复于 "+f.FixedVersion)
 		}
+		if f.Component != "" {
+			b = append(b, "来自 "+f.Component)
+		}
 		fmt.Fprintf(t, "    %s  %s  %s\n", f.Priority, pad(id, 16), strings.Join(b, " · "))
 	}
 	if limit < len(sorted) {
@@ -639,6 +657,9 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	if r.inContainer != nil {
 		add("修复", "更新镜像后重建容器，不要在容器里直接升级（步骤见 secwatch scan --container "+r.inContainer.Label()+"）")
 		return out, nil
+	}
+	if g.goProg {
+		return r.goRemedy(g)
 	}
 	if g.l2 {
 		f := g.findings[0]
@@ -689,6 +710,45 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	}
 	if len(bad) > 0 {
 		add("注意", "以下包名含异常字符，未写入命令，请手动核实："+strings.Join(bad, " "))
+	}
+	return out, bins
+}
+
+// goRemedy explains how to fix a Go program: a new release of the program
+// (or of its package), since its dependencies and Go version are compiled in.
+func (r *Report) goRemedy(g *pkgGroup) ([][2]string, []string) {
+	var out [][2]string
+	add := func(k, v string) { out = append(out, [2]string{k, v}) }
+	f := g.findings[0]
+	add("位置", f.Path+"（Go 程序）")
+	var comps []string
+	seen := map[string]bool{}
+	for _, x := range g.findings {
+		if x.Component != "" && !seen[x.Component] {
+			seen[x.Component] = true
+			comps = append(comps, x.Component)
+		}
+	}
+	var bins []string
+	if f.Method == "package" {
+		if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
+			add("修复", r.upgradeCommand(pkgs)+"（从原第三方软件源升级）")
+			bins = pkgs
+		}
+	} else if g.target != "" {
+		add("修复", fmt.Sprintf("把 %s 升级到 %s 或更高版本：用原来的方式重新下载或安装（系统升级不会更新它）", g.pkg, g.target))
+	} else {
+		add("修复", "换用程序的最新版本：用原来的方式重新下载或安装；如果是自己编译的，升级依赖或 Go 后重新编译")
+	}
+	if len(comps) > 0 {
+		sort.Strings(comps)
+		if len(comps) > 4 {
+			comps = append(comps[:4], fmt.Sprintf("等 %d 项", len(comps)))
+		}
+		add("说明", "部分漏洞来自程序内置的 "+strings.Join(comps, "、")+"。是否真的能被利用，取决于程序有没有用到相关功能，因此标为“可能受影响”；修复要靠用新版依赖或新版 Go 编译的程序版本。")
+	}
+	if g.exposed {
+		add("注意", "该程序正在对外提供服务，升级后需重启才会生效")
 	}
 	return out, bins
 }

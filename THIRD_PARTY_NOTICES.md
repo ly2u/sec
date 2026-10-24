@@ -6,6 +6,12 @@
 - CISA Known Exploited Vulnerabilities Catalog：[官方数据](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)，美国政府公开数据；不隐去原始来源及参考链接。
 - FIRST EPSS / Empirical Security：[官方数据说明](https://www.first.org/epss/data.html)。保留 FIRST EPSS 署名、模型版本和评分日期；免费访问不等于本项目可重新许可上游数据。
 
+- **Go Vulnerability Database**：Go 团队，经 OSV 导出获取；数据使用 [CC-BY-4.0](https://go.dev/security/vuln/database#license)。数据包中每条记录保留 `https://pkg.go.dev/vuln/GO-…` 来源链接。
+
+## 第三方代码
+
+- **golang.org/x/mod/semver**（`scanner/internal/thirdparty/semver/semver.go`）：The Go Authors，BSD-3-Clause，许可证原文见同目录 `LICENSE`。原样复制，用于 Go 版本比较。
+
 ## OSV 导出及发行版数据
 
 - **OSV.dev 聚合导出**：[数据来源和导出说明](https://google.github.io/osv.dev/data/)。

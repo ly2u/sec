@@ -33,6 +33,7 @@ def main():
     commands.add_parser("worker", help="Run the PostgreSQL-locked persistent scheduler")
     commands.add_parser("bundles", help="Publish changed signed distro bundles")
     commands.add_parser("nodejs", help="Import the Node.js security-wg core database")
+    commands.add_parser("golang", help="Import the Go vulnerability database (OSV export)")
     commands.add_parser(
         "upstream-backfill", help="Derive L2 product ranges from all stored CVE records once"
     )
@@ -82,6 +83,15 @@ def main():
         http = FeedHTTP()
         try:
             print(json.dumps(NodejsAdapter(http).run(engine)))
+        finally:
+            http.close()
+        return
+    if args.command == "golang":
+        from collector.adapters.golang import GoAdapter
+
+        http = FeedHTTP()
+        try:
+            print(json.dumps(GoAdapter(http).run(engine)))
         finally:
             http.close()
         return

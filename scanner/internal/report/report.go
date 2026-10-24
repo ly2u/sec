@@ -188,6 +188,11 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 		}
 		f.Exposed = exposed
 		f.Priority = Priority(f, exposed)
+		// Code bundled into a Go program (dependencies, standard library) may
+		// not be reachable: never above P2 unless exploited in the wild.
+		if f.Component != "" && !f.KEV && f.Priority < "P2" {
+			f.Priority = "P2"
+		}
 		if f.Status == match.Unknown || (f.Minor && !f.KEV) {
 			f.Priority = "P3"
 		}

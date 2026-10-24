@@ -14,7 +14,7 @@ import (
 var MethodLabel = map[string]string{
 	"baota": "宝塔面板", "lnmp": "一键安装脚本（LNMP/OneinStack 等）", "source": "源码编译",
 	"binary": "官方二进制", "nvm": "nvm", "fnm": "fnm", "volta": "volta", "n": "n",
-	"process": "运行中的程序（不属于任何软件包）", "package": "第三方软件源",
+	"process": "运行中的程序（不属于任何软件包）", "package": "第三方软件源", "go": "Go 程序",
 }
 
 // Outcome of matching installs against the upstream bundle.

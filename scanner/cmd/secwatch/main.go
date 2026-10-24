@@ -18,6 +18,7 @@ import (
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
 	"github.com/ly2u/sec/scanner/internal/container"
+	"github.com/ly2u/sec/scanner/internal/gobin"
 	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
@@ -53,6 +54,7 @@ scan 选项：
   --bundle FILE            离线数据包（*.json.zst），签名默认为 FILE.minisig
   --signature FILE         离线数据包的签名文件
   --upstream-bundle FILE   离线上游软件数据包（upstream-1.*.json.zst），用于检测非包管理安装的软件
+  --go-bundle FILE         离线 Go 漏洞数据包（golang-1.*.json.zst），用于检测 Go 编译的程序
   --bundle-url URL         自建数据源地址（必须 https）
   --pubkey FILE            信任指定的公钥（替代内置公钥，用于自建数据源）
   --root DIR               扫描挂载在 DIR 的文件系统（不检查进程与内核）
@@ -94,6 +96,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
 	upstreamPath := fs.String("upstream-bundle", "", "")
+	goPath := fs.String("go-bundle", "", "")
 	baseURL := fs.String("bundle-url", bundle.DefaultBaseURL, "")
 	pubkey := fs.String("pubkey", "", "")
 	root := fs.String("root", "/", "")
@@ -144,12 +147,17 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	var res, upstream *bundle.Result
 	var fetch fetchFunc
 	if *bundlePath != "" {
-		fetch = func(distro, release string) (*bundle.Result, error) {
-			if distro == osInfo.Distro && release == osInfo.Release {
+		fetch = cachedFetch(func(distro, release string) (*bundle.Result, error) {
+			switch {
+			case distro == osInfo.Distro && release == osInfo.Release:
 				return res, nil
+			case distro == "golang" && *goPath != "":
+				return loadOffline(*goPath, "", "golang", "1", keys)
+			case distro == "golang":
+				return nil, errors.New("离线模式未提供 --go-bundle")
 			}
 			return nil, errors.New("离线模式只提供了本机系统的数据包")
-		}
+		})
 		res, err = loadOffline(*bundlePath, *sigPath, osInfo.Distro, osInfo.Release, keys)
 		if err == nil && *upstreamPath != "" {
 			var uerr error
@@ -205,6 +213,33 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	if upstream != nil {
 		o := l2.Evaluate(found, upstream.Bundle, rules, exposedFn(rt))
 		outcome = &o
+	}
+
+	// Go-compiled programs (借鉴 Trivy/Grype): running ones, hand-installed ones
+	// and those from third-party packages not already covered above.
+	var cands []gobin.Candidate
+	if host.Live() {
+		cands = gobin.HostProcesses("/proc")
+	}
+	var thirdNames []string
+	for _, p := range result.ThirdParty {
+		thirdNames = append(thirdNames, p.Name)
+	}
+	cands = append(cands, gobin.Files(host, gobin.DebFiles(host, thirdNames))...)
+	progs := skipCovered(gobin.Collect(cands, ownerFn(owners, inv)), found)
+	if len(progs) > 0 {
+		goData, gerr := fetch("golang", "1")
+		if gerr != nil {
+			notes = append(notes, "Go 漏洞数据获取失败（"+gerr.Error()+"），Go 程序只列出、不判定漏洞。")
+		} else {
+			if outcome == nil {
+				outcome = &l2.Outcome{}
+			}
+			outcome.Findings = append(outcome.Findings, gobin.Evaluate(progs, goData.Bundle, func(p gobin.Program) bool {
+				return exposedFn(rt)(l2.Install{Path: p.Path, Packages: nonEmpty(p.Package)})
+			})...)
+		}
+		found.Installs = append(found.Installs, goInstalls(progs)...)
 	}
 
 	rep := report.Build(Version, osInfo, inv, result, rt, report.DataInfo{
@@ -367,9 +402,37 @@ func scanContainer(t container.Target, fetch fetchFunc, all bool) report.Contain
 		return c
 	}
 	defer h.Close()
+
+	// Go programs running in the container, read through /proc/PID/exe.
+	progs := gobin.Collect(gobin.ContainerProcesses("/proc", t.PIDs), nil)
+	var goFindings []match.Finding
+	var goData *bundle.Result
+	if len(progs) > 0 {
+		if gd, err := fetch("golang", "1"); err == nil {
+			goData = gd
+			goFindings = gobin.Evaluate(progs, gd.Bundle, nil)
+		}
+	}
+	goParts := func() (*l2.Result, *l2.Outcome) {
+		if goData == nil {
+			return nil, nil
+		}
+		return &l2.Result{Installs: goInstalls(progs)}, &l2.Outcome{Findings: goFindings}
+	}
+
 	o, err := system.DetectOS(h)
 	if err != nil {
-		c.Reason = "精简镜像（没有系统信息和软件包数据库）"
+		if goData == nil {
+			c.Reason = "精简镜像（没有系统信息和软件包数据库）"
+			return c
+		}
+		// Distroless or scratch image: only its Go programs can be judged.
+		c.OS = "精简镜像"
+		found, outcome := goParts()
+		c.Report = report.Build(Version, system.OS{PrettyName: "精简镜像（无系统软件包，只检查 Go 程序）"}, &system.Inventory{},
+			match.Result{}, nil, report.DataInfo{File: goData.File, GeneratedAt: goData.Bundle.GeneratedAt, KeyID: goData.KeyID, FromCache: goData.FromCache},
+			nil, all, found, outcome)
+		c.Status = report.ContainerScanned
 		return c
 	}
 	c.OS = report.OSLabel(o.ID, o.Distro, o.Release, o.VersionID)
@@ -397,9 +460,73 @@ func scanContainer(t container.Target, fetch fetchFunc, all bool) report.Contain
 		return c
 	}
 	result := match.Evaluate(match.Input{OS: o, Inventory: inv, Bundle: b.Bundle})
+	found, outcome := goParts()
 	c.Report = report.Build(Version, o, inv, result, nil, report.DataInfo{
 		File: b.File, GeneratedAt: b.Bundle.GeneratedAt, KeyID: b.KeyID, FromCache: b.FromCache,
-	}, b.Warnings, all, nil, nil)
+	}, b.Warnings, all, found, outcome)
 	c.Status = report.ContainerScanned
 	return c
+}
+
+// ownerFn tells gobin which package owns a file and whether that package is
+// covered by the distribution's own data (anything not from a third party).
+func ownerFn(owners *procinfo.Owners, inv *system.Inventory) gobin.Owner {
+	origin := map[string]system.Origin{}
+	for _, p := range inv.Packages {
+		origin[p.Name] = p.Origin
+	}
+	return func(path string) (string, bool) {
+		pkg := owners.Owner(path)
+		if pkg == "" {
+			return "", false
+		}
+		return pkg, origin[pkg] != system.ThirdParty
+	}
+}
+
+// skipCovered drops programs that the product rules already evaluated (for
+// example dockerd from Docker's repository), so nothing is reported twice.
+func skipCovered(progs []gobin.Program, found l2.Result) []gobin.Program {
+	paths, pkgs := map[string]bool{}, map[string]bool{}
+	for _, in := range found.Installs {
+		paths[in.Path] = true
+		for _, p := range in.Packages {
+			pkgs[p] = true
+		}
+	}
+	var out []gobin.Program
+	for _, p := range progs {
+		if !paths[p.Path] && (p.Package == "" || !pkgs[p.Package]) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// goInstalls lists Go programs with the other software found outside the
+// distribution's packages (shown with --all and in JSON).
+func goInstalls(progs []gobin.Program) []l2.Install {
+	var out []l2.Install
+	for _, p := range progs {
+		method := "go"
+		if p.Package != "" {
+			method = "package"
+		}
+		v := p.Core.Version
+		if v == "" {
+			v = "版本未知"
+		}
+		out = append(out, l2.Install{
+			Product: "go", ProductName: p.Name, Version: v, Method: method, Path: p.Path,
+			Packages: nonEmpty(p.Package), Running: p.Running, Note: p.Describe(),
+		})
+	}
+	return out
+}
+
+func nonEmpty(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return []string{s}
 }

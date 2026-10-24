@@ -52,7 +52,7 @@ def test_real_signature_tamper_noop_changed_release_and_7_day_retention(db, tmp_
     out = tmp_path / "bundles"
     record = seed(db)
     first = generate(db, out, secret, public, binary=binary)
-    assert len(first["rebuilt"]) == 14  # 13 distro releases + upstream-1
+    assert len(first["rebuilt"]) == 15  # 13 distro releases + upstream-1 + golang-1
     manifest = json.loads((out / "manifest.json").read_bytes())
     assert manifest["key_id"] == public_key_id(public)
     item = manifest["bundles"]["ubuntu-20.04"]

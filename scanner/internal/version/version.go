@@ -12,6 +12,8 @@ import (
 	apk "github.com/knqyf263/go-apk-version"
 	deb "github.com/knqyf263/go-deb-version"
 	rpm "github.com/knqyf263/go-rpm-version"
+
+	"github.com/ly2u/sec/scanner/internal/thirdparty/semver"
 )
 
 // Kind is the package manager whose comparison rules apply.
@@ -24,6 +26,10 @@ const (
 	// Upstream compares plain upstream release versions (1.24.0, 9.8p1,
 	// 1.1.1w, 24.22.1) segment by segment, using rpmvercmp's rules.
 	Upstream Kind = "upstream"
+	// Go compares Go module and Go release versions as semver without the
+	// leading "v" (1.21.3, 0.17.0, 1.21.0-0, pseudo-versions), as the Go
+	// vulnerability database writes them.
+	Go Kind = "go"
 )
 
 var upstreamVersion = regexp.MustCompile(`^[0-9][0-9A-Za-z.+~_]{0,63}$`)
@@ -80,6 +86,14 @@ func compare(kind Kind, a, b string) (int, error) {
 		// No epoch and no release: compare the version string alone.
 		va, vb := rpm.NewVersion("0:"+a), rpm.NewVersion("0:"+b)
 		return va.Compare(vb), nil
+	case Go:
+		va, vb := "v"+a, "v"+b
+		for _, v := range []string{va, vb} {
+			if !semver.IsValid(v) {
+				return 0, fmt.Errorf("invalid Go version %q", v[1:])
+			}
+		}
+		return semver.Compare(va, vb), nil
 	case APK:
 		va, err := apk.NewVersion(a)
 		if err != nil {

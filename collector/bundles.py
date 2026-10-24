@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from apps.server.models import (
     AffectedPackage,
     EPSSScore,
+    GoAdvisory,
     IngestionState,
     KEVEntry,
     UpstreamAdvisory,
@@ -27,7 +28,7 @@ from apps.server.models import (
 from collector.distros import PACKAGE_KEYS, PACKAGE_NAME, RELEASES, VERSION
 
 FILENAME = re.compile(
-    r"(?:debian|ubuntu|rocky|alma|alpine|upstream)-[\d.]+\.[a-f0-9]{12}\.json\.zst(?:\.minisig)?"
+    r"(?:debian|ubuntu|rocky|alma|alpine|upstream|golang)-[\d.]+\.[a-f0-9]{12}\.json\.zst(?:\.minisig)?"
 )
 
 
@@ -202,8 +203,64 @@ def upstream_entries(session):
         )
 
 
+def golang_entries(session):
+    """Yield (module, entry) for Go-compiled programs, in module order."""
+    from collector.adapters.golang import MODULE, SEMVER
+
+    rows = session.scalars(select(GoAdvisory).order_by(GoAdvisory.module, GoAdvisory.id)).all()
+    enrichment = enrichment_for(session, {c for r in rows for c in r.cve_ids})
+    for row in rows:
+        if not MODULE.fullmatch(row.module):
+            raise ValueError("Unsafe Go module path")
+        if not row.ref.startswith("https://pkg.go.dev/vuln/"):
+            raise ValueError("Unexpected Go advisory reference")
+        ranges = []
+        for r in row.ranges:
+            events = []
+            for e in r["events"]:
+                ((kind, value),) = e.items()
+                if kind not in ("introduced", "fixed", "last_affected") or not SEMVER.fullmatch(
+                    value
+                ):
+                    raise ValueError("Unsafe Go version event")
+                events.append({kind: value})
+            ranges.append({"type": "SEMVER", "events": events})
+        facts = [enrichment[c] for c in row.cve_ids if c in enrichment]
+        published = [f for f in facts if f.status == "PUBLISHED"]
+        scores = [f.cvss for f in published if f.cvss is not None]
+        selected = max(published, key=lambda f: f.cvss if f.cvss is not None else -1, default=None)
+        fixes = [
+            {"version": e["fixed"], "requires_subscription": False}
+            for r in ranges
+            for e in r["events"]
+            if "fixed" in e
+        ]
+        yield (
+            row.module,
+            {
+                "id": row.cve_ids[0] if len(row.cve_ids) == 1 else row.vuln_id,
+                "advisory_id": row.vuln_id,
+                "aliases": [],
+                "cve_ids": list(row.cve_ids),
+                "ecosystem": "Go",
+                "status": "fixed" if fixes else "unfixed",
+                "fixed_version": None,
+                "ranges": ranges,
+                "requires_subscription": False,
+                "fixes": fixes,
+                "severity": selected.severity if selected and selected.severity else None,
+                "cvss": max(scores) if scores else None,
+                "kev": any(f.is_active is True for f in published),
+                "ransomware": ransomware(published),
+                "epss": max((float(f.epss) for f in published if f.epss is not None), default=None),
+                "ref": row.ref,
+                "urgency": None,
+            },
+        )
+
+
 def package_key(distro):
-    return "product" if distro == "upstream" else PACKAGE_KEYS[distro]
+    return {"upstream": "product", "golang": "module"}.get(distro) or PACKAGE_KEYS[distro]
 
 
 def bundle_entries(session, distro, release):
@@ -323,11 +380,12 @@ def write_payload(session, path, distro, release, generated_at, sources):
         output.write(b',"generated_at":')
         output.write(canonical(generated_at))
         output.write(b',"source_packages":{')
-        entries = (
-            upstream_entries(session)
-            if distro == "upstream"
-            else bundle_entries(session, distro, release)
-        )
+        if distro == "upstream":
+            entries = upstream_entries(session)
+        elif distro == "golang":
+            entries = golang_entries(session)
+        else:
+            entries = bundle_entries(session, distro, release)
         for package_name, entry in entries:
             if package_name != current_package:
                 if current_package is not None:
@@ -412,8 +470,9 @@ def generate(
             for r in source_states
             if r.completed and not r.source.startswith("cve:baseline")
         }
-        # "upstream-1" carries layer-L2 product ranges; schema version 1.
-        for distro, releases in [*RELEASES.items(), ("upstream", ["1"])]:
+        # "upstream-1" carries layer-L2 product ranges; "golang-1" the Go
+        # vulnerability database for Go-compiled programs. Schema version 1.
+        for distro, releases in [*RELEASES.items(), ("upstream", ["1"]), ("golang", ["1"])]:
             for release in releases:
                 slug = f"{distro}-{release}"
                 payload_fd, payload_tmp = tempfile.mkstemp(prefix=".pending-payload-", dir=output)

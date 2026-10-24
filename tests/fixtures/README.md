@@ -8,3 +8,4 @@
 - `epss.csv`：[FIRST 数据说明](https://www.first.org/epss/data.html)指向的日更 CSV 的原始前四行，保留模型版本、评分日期和两个分数。
 
 测试中的 ZIP、gzip、delta 响应由这些夹具在内存中构造。故障、字段变化和 RESERVED 等变体属于明确构造的测试输入，不作为真实漏洞事实发布。
+- `golang/GO-2023-2102.json`：按 [Go 漏洞库](https://pkg.go.dev/vuln/GO-2023-2102) 公开记录的 OSV 结构整理（stdlib 与 golang.org/x/net 的修复版本取自公开公告；`toolchain` 一项为构造的输入，用于验证会被跳过）。Go 漏洞库数据使用 CC-BY-4.0。

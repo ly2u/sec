@@ -28,6 +28,7 @@ type pkgGroup struct {
 	exposed   bool
 	kev       bool
 	ransom    bool
+	goProg    bool // a Go-compiled program
 	maxCVSS   float64
 	l2        bool
 }
@@ -52,12 +53,15 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 		}
 		g.exposed = g.exposed || f.Exposed
 		g.kev = g.kev || f.KEV
+		g.goProg = g.goProg || f.Module != ""
 		g.ransom = g.ransom || f.Ransomware
 		if f.CVSS != nil && *f.CVSS > g.maxCVSS {
 			g.maxCVSS = *f.CVSS
 		}
-		if f.FixedVersion != "" && (f.Fix == match.FixUpgrade || f.Fix == match.FixReboot || f.Fix == match.FixSubscription) {
-			if g.target == "" || r.cmpFor(g.l2, f.FixedVersion, g.target) > 0 {
+		// A Go program's target is its own module's fix; bundled dependencies
+		// and the Go standard library are fixed by a new build, not a version.
+		if f.FixedVersion != "" && f.Component == "" && (f.Fix == match.FixUpgrade || f.Fix == match.FixReboot || f.Fix == match.FixSubscription) {
+			if g.target == "" || r.cmpFor(g.l2, f.Module != "", f.FixedVersion, g.target) > 0 {
 				g.target = f.FixedVersion
 			}
 		}
@@ -78,9 +82,12 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 	return out
 }
 
-func (r *Report) cmpFor(upstream bool, a, b string) int {
+func (r *Report) cmpFor(upstream, goModule bool, a, b string) int {
 	kind := r.kind
-	if upstream {
+	switch {
+	case goModule:
+		kind = version.Go
+	case upstream:
 		kind = version.Upstream
 	}
 	c, err := compareVersions(kind, a, b)

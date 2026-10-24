@@ -221,7 +221,7 @@ func Decode(compressed []byte, distro, release string) (*Bundle, error) {
 		return nil, fmt.Errorf("bundle is for %s %s, expected %s %s", b.Distro, b.Release, distro, release)
 	}
 	switch b.PackageKey {
-	case "source", "binary", "origin", "product":
+	case "source", "binary", "origin", "product", "module":
 	default:
 		return nil, fmt.Errorf("unknown package_key %q", b.PackageKey)
 	}

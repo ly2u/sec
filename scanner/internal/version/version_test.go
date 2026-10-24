@@ -143,3 +143,28 @@ func TestUpstreamCompare(t *testing.T) {
 		t.Error("1.30.6 is outside the end-of-life range")
 	}
 }
+
+func TestGoVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"1.21.3", "1.21.10", -1},
+		{"1.21.0-0", "1.21.0", -1}, // vulndb's "start of the 1.21 line"
+		{"1.21.0-rc.1", "1.21.0-0", 1},
+		{"0.0.0-20230101000000-abcdefabcdef", "0.17.0", -1}, // pseudo-version
+		{"2.10.2", "2.10.2", 0},
+	} {
+		got, err := Compare(Go, c.a, c.b)
+		if err != nil || got != c.want {
+			t.Errorf("Compare(%s, %s) = %d, %v; want %d", c.a, c.b, got, err, c.want)
+		}
+	}
+	if _, err := Compare(Go, "(devel)", "1.0.0"); err == nil {
+		t.Error("an unknown version must be an error, never guessed")
+	}
+	a, err := Affected(Go, "1.21.2", []Event{{Introduced: "0"}, {Fixed: "1.20.10"}, {Introduced: "1.21.0-0"}, {Fixed: "1.21.3"}})
+	if err != nil || !a {
+		t.Error("go 1.21.2 is in the second range")
+	}
+}

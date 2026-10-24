@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from apps.server.models import ScheduledTask, TaskRun
 from collector.adapters.cvelist import CVEAdapter
 from collector.adapters.epss import EPSSAdapter
+from collector.adapters.golang import GoAdapter
 from collector.adapters.kev import KEVAdapter
 from collector.adapters.nodejs import NodejsAdapter
 from collector.adapters.osv import OSVAdapter
@@ -30,6 +31,7 @@ TASKS = {
     "osv": 3600,
     "epss": 86400,
     "nodejs": 21600,
+    "golang": 21600,
     "telegram": 300,
 }
 
@@ -84,6 +86,8 @@ def perform(engine, task):
             result = CVEAdapter(http).delta(engine, limit=None)
         elif task == "nodejs":
             result = NodejsAdapter(http).run(engine)
+        elif task == "golang":
+            result = GoAdapter(http).run(engine)
         else:
             result = {base: OSVAdapter(http).delta(engine, base, limit=None) for base in BASES}
         changed = (
@@ -96,7 +100,7 @@ def perform(engine, task):
             if changed
             else {
                 "rebuilt": [],
-                "bundles": sum(len(releases) for releases in RELEASES.values()) + 1,
+                "bundles": sum(len(releases) for releases in RELEASES.values()) + 2,
                 "skipped": "feed-unchanged",
             }
         )

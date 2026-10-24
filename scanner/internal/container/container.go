@@ -19,6 +19,7 @@ type Target struct {
 	Name  string `json:"name,omitempty"`  // from the runtime's config, if known
 	Image string `json:"image,omitempty"` // as configured, e.g. "mariadb:11.4"
 	PID   int    `json:"pid"`             // a process inside it
+	PIDs  []int  `json:"-"`               // all its processes
 	Root  string `json:"-"`               // /proc/PID/root
 }
 
@@ -74,13 +75,16 @@ func Discover(proc, docker string) []Target {
 			continue
 		}
 		pid, _ := strconv.Atoi(e.Name())
-		if t, ok := byID[full]; ok && t.PID < pid {
-			continue
+		t, ok := byID[full]
+		t.PIDs = append(t.PIDs, pid)
+		if !ok || pid < t.PID {
+			t.ID, t.PID, t.Root = full[:12], pid, filepath.Join(base, "root")
 		}
-		byID[full] = Target{ID: full[:12], PID: pid, Root: filepath.Join(base, "root")}
+		byID[full] = t
 	}
 	out := make([]Target, 0, len(byID))
 	for full, t := range byID {
+		sort.Ints(t.PIDs)
 		t.Name, t.Image = dockerConfig(docker, full)
 		out = append(out, t)
 	}

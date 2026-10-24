@@ -441,3 +441,72 @@ func TestContainerScan(t *testing.T) {
 		t.Errorf("json containers: %+v", parsed.Containers)
 	}
 }
+
+// Go programs on a mounted root: one installed by hand, one from a
+// third-party repository (which must stop being listed as "not checked").
+func TestGoProgramsEndToEnd(t *testing.T) {
+	root, _, _ := debianHost(t)
+	exe, _ := os.Executable() // a real Go binary
+	data, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"usr/local/bin/frpc", "usr/bin/caddy"} {
+		os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755)
+		if err := os.WriteFile(filepath.Join(root, p), data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, _ := os.ReadFile(filepath.Join(root, "var/lib/dpkg/status"))
+	put(t, root, "var/lib/dpkg/status", string(status)+"\nPackage: caddy\nStatus: install ok installed\nVersion: 2.10.2\n")
+	put(t, root, "var/lib/dpkg/info/caddy.list", "/usr\n/usr/bin\n/usr/bin/caddy\n")
+	put(t, root, "var/lib/apt/lists/dl.cloudsmith.io_public_caddy_stable_deb_debian_dists_any-version_main_binary-amd64_Packages", "Package: caddy\nVersion: 2.10.2\n")
+
+	s, _ := testutil.NewSigner()
+	out := t.TempDir()
+	distro, _ := fixture.WriteBundleSigned(s, "debian", "12", "source", map[string][]bundle.Entry{}, out)
+	cvss := 7.5
+	goBundle, _ := fixture.WriteBundleSigned(s, "golang", "1", "module", map[string][]bundle.Entry{
+		"stdlib": {{ID: "CVE-2099-1234", CVEIDs: []string{"CVE-2099-1234"}, CVSS: &cvss, Ref: "https://pkg.go.dev/vuln/GO-2099-0001",
+			Ranges: []bundle.Range{{Type: "SEMVER", Events: []version.Event{{Introduced: "0"}, {Fixed: "99.0.0"}}}}}},
+	}, out)
+	pub := filepath.Join(out, "key.pub")
+	os.WriteFile(pub, s.PublicKeyFile(), 0o644)
+	args := []string{"--root", root, "--offline", "--bundle", distro, "--go-bundle", goBundle, "--pubkey", pub, "--no-cache"}
+
+	var stdout, stderr bytes.Buffer
+	if code := scan(args, &stdout, &stderr); code == exitError {
+		t.Fatalf("scan failed: %s", stderr.String())
+	}
+	text := stdout.String()
+	t.Log("\n" + text)
+	for _, want := range []string{
+		"  P2 计划  caddy        1  高危 7.5 · Go 程序内置组件 · 第三方源",
+		"  P2 计划  frpc         1  高危 7.5 · Go 程序内置组件 · 需单独升级",
+		"secwatch scan --pkg frpc",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(text, "caddy（第三方源") {
+		t.Error("caddy was checked as a Go program and must not be listed as not checked")
+	}
+
+	stdout.Reset()
+	scan(append(args, "--pkg", "frpc"), &stdout, &stderr)
+	one := stdout.String()
+	t.Log("\n" + one)
+	for _, want := range []string{"位置  /usr/local/bin/frpc（Go 程序）", "来自 Go ", "标准库", "可能受影响", "CVE-2099-1234"} {
+		if !strings.Contains(one, want) {
+			t.Errorf("--pkg frpc missing %q", want)
+		}
+	}
+
+	stdout.Reset()
+	noGo := []string{"--root", root, "--offline", "--bundle", distro, "--pubkey", pub, "--no-cache"}
+	scan(noGo, &stdout, &stderr)
+	if !strings.Contains(stdout.String(), "离线模式未提供 --go-bundle") {
+		t.Errorf("without Go data the programs are only listed, and the report says why\n%s", stdout.String())
+	}
+}

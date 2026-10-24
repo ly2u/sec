@@ -65,6 +65,11 @@ type Finding struct {
 	Method   string `json:"method,omitempty"`
 	Path     string `json:"path,omitempty"`
 	Guidance string `json:"guidance,omitempty"`
+	// Go programs: the affected module, and for anything but the program's
+	// own module a label such as "依赖 golang.org/x/net 0.15.0" or
+	// "Go 1.21.5 标准库" (reachability is not checked, so potentially affected).
+	Module    string `json:"module,omitempty"`
+	Component string `json:"component,omitempty"`
 	// Minor: the distro rates this negligible (Debian "unimportant").
 	Minor bool `json:"minor,omitempty"`
 }

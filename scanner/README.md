@@ -33,6 +33,7 @@ secwatch scan --pkg openssh         # 只看一个软件包：全部漏洞、升
 secwatch scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）
 secwatch scan --container db        # 只看一个容器（以 root 运行时默认检查运行中的容器）
 secwatch scan --fail-on P2          # 定时任务：P2 及以上就返回退出码 3
+secwatch scan --pkg caddy           # Go 编译的程序也能单独查看（模块、Go 版本对应的漏洞）
 secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 ```
 

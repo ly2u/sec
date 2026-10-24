@@ -270,7 +270,9 @@ def test_lookup_is_exact(client, query, status, location):
     if location:
         assert response.headers["location"] == location
     else:
-        assert response.text.count("<script") == 1  # only our copy.js; input never reflected as markup
+        assert (
+            response.text.count("<script") == 1
+        )  # only our copy.js; input never reflected as markup
 
 
 def test_product_pages(client):

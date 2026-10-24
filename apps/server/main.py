@@ -46,10 +46,10 @@ class HeadAsGet:
 
 app.add_middleware(HeadAsGet)
 
-# No scripts, no external resources: the policy states exactly what pages may load.
+# Only this site's own files: one small script (copy buttons), no inline code, nothing external.
 CSP = (
-    "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; "
-    "base-uri 'none'; frame-ancestors 'none'"
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 )
 
 

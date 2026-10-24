@@ -79,7 +79,7 @@ button:hover { background: #8dbcff; }
 .lookup-top input { width: 14rem; }
 
 /* ---------- home hero ---------- */
-.hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 2.5rem; padding: 2.6rem 0 2.6rem; align-items: center; }
+.hero { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 2.5rem; padding: 2.4rem 0 2rem; align-items: center; }
 .live { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.9rem; color: var(--muted); font-size: 0.82rem; margin-bottom: 1rem; }
 .live .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--radar); box-shadow: 0 0 0 0 rgba(61, 214, 166, 0.6); animation: pulse 2.4s ease-out infinite; }
 .live span { color: var(--faint); }
@@ -89,20 +89,25 @@ button:hover { background: #8dbcff; }
 .hero .lookup button { font-size: 1.05rem; padding: 0 1.6rem; border-radius: 10px; }
 .hero .hint { color: var(--faint); font-size: 0.82rem; margin-top: 0.6rem; }
 
-.hero-side { position: relative; min-height: 18rem; display: flex; align-items: center; }
-.radar { position: absolute; right: -2rem; top: 50%; width: 22rem; height: 22rem; transform: translateY(-50%); opacity: 0.75; }
+.hero-radar { display: flex; justify-content: center; align-items: center; }
+.radar { width: 19rem; height: 19rem; max-width: 100%; }
 .radar .rings { stroke: #2d4a75; stroke-width: 1; }
 .radar .sweep { transform-origin: 120px 120px; animation: sweep 6s linear infinite; }
-.radar .blip { opacity: 0.95; }
 .radar .b0 { fill: var(--p0); } .radar .b1 { fill: var(--p1); }
 .radar .b2 { fill: var(--p2); } .radar .b3 { fill: var(--p3); }
-.term { position: relative; width: 100%; background: rgba(9, 16, 30, 0.88); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35); }
-.term-head { padding: 0.65rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.85rem; font-weight: 700; color: var(--ink); }
-.term pre { border: 0; background: none; padding: 0.9rem 1rem; font-size: 0.84rem; }
+
+.term { margin: 0 0 2rem; background: rgba(9, 16, 30, 0.88); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3); }
+.term-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 1rem; border-bottom: 1px solid var(--line); font-size: 0.88rem; font-weight: 700; }
+.term-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; }
+.term pre { border: 0; background: none; padding: 1rem 1.1rem; font-size: 0.86rem; }
 .term .pr { color: var(--link); }
 .term .ok { color: var(--radar); }
 .term .cursor { display: inline-block; width: 0.55em; height: 1.05em; margin-left: 0.2em; vertical-align: -0.15em; background: var(--ink); animation: blink 1.1s steps(1) infinite; }
-.term-foot { margin: 0; padding: 0.6rem 1rem 0.8rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.8rem; }
+.term-points { list-style: none; margin: 0; padding: 0.9rem 1.1rem; border-left: 1px solid var(--line); display: grid; gap: 0.45rem; font-size: 0.86rem; color: var(--muted); }
+.term-points b { display: inline-block; min-width: 4.5em; color: var(--radar); font-weight: 700; }
+button.copy { font-size: 0.8rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 6px; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line-2); }
+button.copy:hover { background: var(--line-2); }
+.copy-buffer { position: fixed; top: -100px; left: 0; opacity: 0; }
 
 @keyframes sweep { to { transform: rotate(360deg); } }
 @keyframes blink { 50% { opacity: 0; } }
@@ -248,8 +253,9 @@ footer .fresh { flex-basis: 100%; }
 
 @media (max-width: 56rem) {
   .hero { grid-template-columns: minmax(0, 1fr); gap: 1.8rem; padding-top: 2rem; }
-  .hero-side { min-height: 0; }
-  .radar { width: 16rem; height: 16rem; right: -3rem; top: -1rem; transform: none; opacity: 0.35; }
+  .hero-radar { display: none; }
+  .term-body { grid-template-columns: minmax(0, 1fr); }
+  .term-points { border-left: 0; border-top: 1px solid var(--line); }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -268,3 +274,6 @@ footer .fresh { flex-basis: 100%; }
 
 /* meter segment widths (CSP forbids inline styles) */
 .w-1{flex-grow:1}.w-2{flex-grow:2}.w-3{flex-grow:3}.w-4{flex-grow:4}.w-5{flex-grow:5}.w-6{flex-grow:6}.w-7{flex-grow:7}.w-8{flex-grow:8}.w-9{flex-grow:9}.w-10{flex-grow:10}.w-11{flex-grow:11}.w-12{flex-grow:12}.w-13{flex-grow:13}.w-14{flex-grow:14}.w-15{flex-grow:15}.w-16{flex-grow:16}.w-17{flex-grow:17}.w-18{flex-grow:18}.w-19{flex-grow:19}.w-20{flex-grow:20}.w-21{flex-grow:21}.w-22{flex-grow:22}.w-23{flex-grow:23}.w-24{flex-grow:24}.w-25{flex-grow:25}.w-26{flex-grow:26}.w-27{flex-grow:27}.w-28{flex-grow:28}.w-29{flex-grow:29}.w-30{flex-grow:30}.w-31{flex-grow:31}.w-32{flex-grow:32}.w-33{flex-grow:33}.w-34{flex-grow:34}.w-35{flex-grow:35}.w-36{flex-grow:36}.w-37{flex-grow:37}.w-38{flex-grow:38}.w-39{flex-grow:39}.w-40{flex-grow:40}.w-41{flex-grow:41}.w-42{flex-grow:42}.w-43{flex-grow:43}.w-44{flex-grow:44}.w-45{flex-grow:45}.w-46{flex-grow:46}.w-47{flex-grow:47}.w-48{flex-grow:48}.w-49{flex-grow:49}.w-50{flex-grow:50}.w-51{flex-grow:51}.w-52{flex-grow:52}.w-53{flex-grow:53}.w-54{flex-grow:54}.w-55{flex-grow:55}.w-56{flex-grow:56}.w-57{flex-grow:57}.w-58{flex-grow:58}.w-59{flex-grow:59}.w-60{flex-grow:60}.w-61{flex-grow:61}.w-62{flex-grow:62}.w-63{flex-grow:63}.w-64{flex-grow:64}.w-65{flex-grow:65}.w-66{flex-grow:66}.w-67{flex-grow:67}.w-68{flex-grow:68}.w-69{flex-grow:69}.w-70{flex-grow:70}.w-71{flex-grow:71}.w-72{flex-grow:72}.w-73{flex-grow:73}.w-74{flex-grow:74}.w-75{flex-grow:75}.w-76{flex-grow:76}.w-77{flex-grow:77}.w-78{flex-grow:78}.w-79{flex-grow:79}.w-80{flex-grow:80}.w-81{flex-grow:81}.w-82{flex-grow:82}.w-83{flex-grow:83}.w-84{flex-grow:84}.w-85{flex-grow:85}.w-86{flex-grow:86}.w-87{flex-grow:87}.w-88{flex-grow:88}.w-89{flex-grow:89}.w-90{flex-grow:90}.w-91{flex-grow:91}.w-92{flex-grow:92}.w-93{flex-grow:93}.w-94{flex-grow:94}.w-95{flex-grow:95}.w-96{flex-grow:96}.w-97{flex-grow:97}.w-98{flex-grow:98}.w-99{flex-grow:99}.w-100{flex-grow:100}
+.codebox { position: relative; }
+.codebox button.copy { position: absolute; top: 0.5rem; right: 0.5rem; }
+.codebox pre { padding-right: 5.5rem; }

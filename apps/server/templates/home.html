@@ -13,17 +13,27 @@
     </form>
     <p class="hint">支持 CVE、GHSA、DSA、DLA、USN、RLSA、ALSA 等编号</p>
   </div>
-  <div class="hero-side">
-    {% include "_radar.html" %}
-    <div class="term" aria-label="一条命令检查整台机器">
-      <div class="term-head">一条命令检查整台机器</div>
+  <div class="hero-radar">{% include "_radar.html" %}</div>
+</div>
+<div class="wrap">
+  <section class="term" aria-label="一条命令检查整台机器">
+    <div class="term-head">
+      <span>一条命令检查整台机器</span>
+      <button type="button" class="copy" data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo secwatch scan" hidden>复制命令</button>
+    </div>
+    <div class="term-body">
 <pre><code><span class="pr">$</span> curl -fsSL https://sec.ly2u.com/install.sh | sh
 <span class="ok">签名有效：SecWatch 发布密钥 C7A3F417E9543893</span>
 <span class="pr">$</span> sudo secwatch scan
 <span class="ok">✓ 没有需要升级的软件包</span><span class="cursor" aria-hidden="true"></span></code></pre>
-      <p class="term-foot">只读运行，不改系统、不上传数据；宝塔、源码编译的软件也能识别。<a href="/scanner">安装说明</a></p>
+      <ul class="term-points">
+        <li><b>只读</b>不改系统，不执行任何修复命令</li>
+        <li><b>不上传</b>所有比对都在你的服务器上完成</li>
+        <li><b>识别面板</b>宝塔、源码编译、nvm 安装的软件也能查</li>
+        <li><b>可校验</b>安装包与漏洞数据都有签名，<a href="/scanner">安装说明</a></li>
+      </ul>
     </div>
-  </div>
+  </section>
 </div>
 {% if risk.total %}
 <div class="meter">

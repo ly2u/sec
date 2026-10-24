@@ -210,10 +210,16 @@ def test_pages_are_light_static_and_cacheable(client, path):
     assert response.status_code == 200, response.text[:500]
     html = response.text
     assert response.headers["cache-control"] == "public, max-age=300"
-    assert "script-src" not in response.headers["content-security-policy"]
-    assert "default-src 'none'" in response.headers["content-security-policy"]
-    # No JavaScript, no external resources, within the size budget.
-    assert "<script" not in html.lower()
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'none'" in csp and "script-src 'self';" in csp
+    assert "unsafe-inline" not in csp
+    # The only script is our own copy-button file; no inline code, no external resources.
+    scripts = re.findall(r"<script\b[^>]*>", html, re.I)
+    assert len(scripts) == 1 and re.match(
+        r'<script src="/static/copy\.js\?v=\w+" defer>', scripts[0]
+    )
+    assert "</script>" in html and html.count("<script") == 1
+    assert not re.search(r"\son[a-z]+=", html)  # no inline event handlers
     assert not re.search(r'\ssrc="(?:https?:)?//', html)
     for tag in re.findall(r"<link\b[^>]*>", html):
         assert not re.search(r'href="(?:https?:)?//', tag), tag
@@ -264,7 +270,7 @@ def test_lookup_is_exact(client, query, status, location):
     if location:
         assert response.headers["location"] == location
     else:
-        assert "<script" not in response.text
+        assert response.text.count("<script") == 1  # only our copy.js; input never reflected as markup
 
 
 def test_product_pages(client):
@@ -364,3 +370,19 @@ def test_titles_and_icon(client):
     assert icon.status_code == 200 and icon.headers["content-type"].startswith("image/svg+xml")
     assert 'property="og:title"' in client.get("/").text
     assert title("/cve/CVE-2020-9999").startswith("CVE-2020-9999 漏洞详情")
+
+
+def test_copy_buttons_are_progressive(client):
+    html = client.get("/").text
+    assert (
+        'data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo secwatch scan" hidden'
+        in html
+    )
+    script = client.get("/static/copy.js")
+    assert script.status_code == 200 and script.headers["content-type"].startswith(
+        "text/javascript"
+    )
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert "fetch(" not in script.text and "XMLHttpRequest" not in script.text
+    hostile = client.get("/go", params={"id": "<script>alert(1)</script>"})
+    assert hostile.status_code == 400 and hostile.text.count("<script") == 1

@@ -12,12 +12,12 @@
 </ul>
 
 <h2>安装</h2>
-<pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh</code></pre>
+<div class="codebox"><button type="button" class="copy" data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh" hidden>复制</button><pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh</code></pre></div>
 <p>安装脚本只做三件事：从 GitHub Releases 下载对应 CPU 架构的程序，校验发布签名和 SHA-256，复制到 <code>/usr/local/bin</code>（非 root 时为 <code>~/.local/bin</code>）。签名校验使用 minisign；没有 minisign 时使用 OpenSSL 3。校验失败会直接中止。</p>
 <p>想先看脚本内容，可以先下载再运行：</p>
-<pre><code>curl -fsSLo install.sh https://sec.ly2u.com/install.sh
+<div class="codebox"><button type="button" class="copy" data-copy="curl -fsSLo install.sh https://sec.ly2u.com/install.sh&#10;less install.sh&#10;sh install.sh" hidden>复制</button><pre><code>curl -fsSLo install.sh https://sec.ly2u.com/install.sh
 less install.sh
-sh install.sh</code></pre>
+sh install.sh</code></pre></div>
 <p class="small muted">可选环境变量：<code>SECWATCH_VERSION=v0.1.0</code> 安装指定版本；<code>SECWATCH_INSTALL_DIR=/opt/bin</code> 指定安装位置。</p>
 
 <h3>手动下载并校验</h3>

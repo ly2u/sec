@@ -24,10 +24,14 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
-@lru_cache(maxsize=1)
-def stylesheet():
-    data = (HERE / "static" / "site.css").read_bytes()
+@lru_cache(maxsize=4)
+def asset(name):
+    data = (HERE / "static" / name).read_bytes()
     return data, hashlib.sha256(data).hexdigest()[:12]
+
+
+def stylesheet():
+    return asset("site.css")
 
 
 def _date(value):
@@ -67,6 +71,7 @@ def _ago(value):
 
 templates.env.filters["ago"] = _ago
 templates.env.globals["css_version"] = lambda: stylesheet()[1]
+templates.env.globals["js_version"] = lambda: asset("copy.js")[1]
 templates.env.globals["site_url"] = SITE_URL
 
 
@@ -74,6 +79,16 @@ def render(request, name, context, status=200, cache=PAGE_CACHE):
     response = templates.TemplateResponse(request, name, context, status_code=status)
     response.headers["Cache-Control"] = cache
     return response
+
+
+@router.get("/static/copy.js")
+def copy_script():
+    data, _ = asset("copy.js")
+    return Response(
+        data,
+        media_type="text/javascript",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.get("/favicon.svg")

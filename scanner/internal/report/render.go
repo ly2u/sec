@@ -190,6 +190,9 @@ func (r *Report) WriteText(out io.Writer) {
 		}
 	}
 	fmt.Fprintf(w, "系统  %s\n", sys)
+	if r.inContainer != nil {
+		fmt.Fprintf(w, "范围  %s（容器内的系统软件包）\n", r.containerBrief())
+	}
 	src := "在线获取"
 	switch {
 	case r.Data.Offline:
@@ -443,6 +446,8 @@ func (r *Report) WriteText(out io.Writer) {
 		fmt.Fprintf(w, "  %s\n", r.upgradeCommand(dedupe(upgradeAll)))
 	}
 
+	r.writeContainers(t)
+
 	section(w, "说明")
 	for _, n := range dedupe(r.Notes) {
 		fmt.Fprintf(w, "  · %s\n", n)
@@ -450,6 +455,12 @@ func (r *Report) WriteText(out io.Writer) {
 	fmt.Fprintln(w, "  · 结论基于发行版公开的安全数据与 CISA KEV、FIRST EPSS；未列出不代表没有漏洞（例如 0day、第三方软件、自行编译的程序）。")
 	fmt.Fprintln(w, "  · 本工具不修改系统、不上传任何数据；以上命令仅供参考，请自行确认后执行。")
 
+	if r.inContainer != nil {
+		if len(fixable) > 0 {
+			r.writeContainerFix(t)
+		}
+		return
+	}
 	r.writeNextSteps(w, fixable)
 }
 

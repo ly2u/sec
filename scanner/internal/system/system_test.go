@@ -269,3 +269,32 @@ func TestParseReleaseOrigin(t *testing.T) {
 		t.Fatalf("plain Release: got %q", o)
 	}
 }
+
+// Container root filesystems are read with every path resolved inside them:
+// absolute and "../" symlinks must not reach the host.
+func TestContainerHostConfinesSymlinks(t *testing.T) {
+	root := t.TempDir()
+	host := t.TempDir()
+	os.WriteFile(filepath.Join(host, "secret"), []byte("HOST"), 0o644)
+	os.MkdirAll(filepath.Join(root, "etc"), 0o755)
+	os.WriteFile(filepath.Join(root, "inside"), []byte("CONTAINER"), 0o644)
+	os.Symlink(filepath.Join(host, "secret"), filepath.Join(root, "etc/abs"))
+	os.Symlink("../../../../../../../../"+filepath.Join(host, "secret"), filepath.Join(root, "etc/rel"))
+	os.Symlink("/inside", filepath.Join(root, "etc/ok"))
+	h, err := ContainerHost(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	for _, p := range []string{"etc/abs", "etc/rel"} {
+		if data, err := h.ReadFile(p); err == nil && string(data) == "HOST" {
+			t.Fatalf("%s escaped to the host", p)
+		}
+	}
+	if data, err := h.ReadFile("etc/ok"); err != nil || string(data) != "CONTAINER" {
+		t.Fatalf("absolute symlink must resolve inside the container root: %q %v", data, err)
+	}
+	if !h.NoExec || h.Live() {
+		t.Fatal("container hosts never execute and are not the live system")
+	}
+}

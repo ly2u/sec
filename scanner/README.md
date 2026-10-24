@@ -31,6 +31,8 @@ secwatch scan                       # 一屏摘要：结论、表格、修复命
 secwatch scan --format json         # 机器可读输出
 secwatch scan --pkg openssh         # 只看一个软件包：全部漏洞、升级与验证命令
 secwatch scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）
+secwatch scan --container db        # 只看一个容器（以 root 运行时默认检查运行中的容器）
+secwatch scan --fail-on P2          # 定时任务：P2 及以上就返回退出码 3
 secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 ```
 

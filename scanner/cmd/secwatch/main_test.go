@@ -9,6 +9,10 @@ import (
 	"testing"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/container"
+	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/report"
+	"github.com/ly2u/sec/scanner/internal/system"
 	"github.com/ly2u/sec/scanner/internal/testutil"
 	"github.com/ly2u/sec/scanner/internal/testutil/fixture"
 	"github.com/ly2u/sec/scanner/internal/version"
@@ -323,4 +327,117 @@ func TestL2EndToEnd(t *testing.T) {
 		t.Errorf("docker-ce was evaluated by L2 and must not be listed as uncovered\n%s", text)
 	}
 	t.Log("\n" + text)
+}
+
+// Containers are scanned through their root filesystems. Here the roots are
+// plain directories standing in for /proc/PID/root.
+func TestContainerScan(t *testing.T) {
+	web, path, pub := debianHost(t) // an image with apt lists and a vulnerable curl
+	slim, _, _ := debianHost(t)     // the same image with its apt lists deleted
+	os.RemoveAll(filepath.Join(slim, "var/lib/apt/lists"))
+	distroless := t.TempDir()
+	old := t.TempDir()
+	put(t, old, "etc/os-release", "ID=alpine\nVERSION_ID=3.18.4\nPRETTY_NAME=\"Alpine Linux v3.18\"\n")
+
+	keys, err := trustedKeys(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := loadOffline(path, "", "debian", "12", keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetches := 0
+	fetch := cachedFetch(func(d, r string) (*bundle.Result, error) {
+		fetches++
+		return res, nil
+	})
+	cs := scanContainers([]container.Target{
+		{ID: "aaaaaaaaaaaa", Name: "web", Image: "nginx:1.27", Root: web},
+		{ID: "bbbbbbbbbbbb", Name: "slim", Root: slim},
+		{ID: "cccccccccccc", Name: "app", Root: distroless},
+		{ID: "dddddddddddd", Root: old},
+	}, fetch, false)
+	if fetches != 1 {
+		t.Errorf("one bundle per distro release, fetched %d times", fetches)
+	}
+
+	o := system.OS{PrettyName: "Debian GNU/Linux 13 (trixie)", Distro: "debian", Release: "13", Kind: version.Deb}
+	host := report.Build("v0.1.3", o, &system.Inventory{}, match.Result{PackagesScanned: 300}, nil, report.DataInfo{KeyID: "X"}, nil, false, nil, nil)
+	host.AddContainers(cs, true)
+	var b bytes.Buffer
+	host.WriteText(&b)
+	out := b.String()
+	t.Log("\n" + out)
+	for _, want := range []string{
+		"✓ 本机没有需要升级的软件包",
+		"容器（4 个运行中，检查了容器内的系统软件包）",
+		"  web           Debian 12    ✗ 1 个需要尽快处理（共 1 个软件包有更新）",
+		"  app                        未检查：精简镜像（没有系统信息和软件包数据库）",
+		"  dddddddddddd  Alpine 3.18  未检查：暂不支持该系统版本",
+		"secwatch scan --container web",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "trivy") || strings.Contains(out, "sudo reboot") {
+		t.Error("containers were scanned and the host has nothing to upgrade")
+	}
+	if !host.Exceeds("P1") {
+		t.Error("an exploited vulnerability in a container must set exit code 3")
+	}
+
+	sub, ok := host.SelectContainer("web")
+	if !ok {
+		t.Fatal("select by name")
+	}
+	b.Reset()
+	sub.WriteText(&b)
+	one := b.String()
+	t.Log("\n" + one)
+	for _, want := range []string{
+		"容器 web（镜像 nginx:1.27）",
+		"  P0 立即  curl         1  已被在野利用 · 严重 9.8",
+		"docker pull nginx:1.27",
+		"secwatch scan --container web --pkg curl",
+	} {
+		if !strings.Contains(one, want) {
+			t.Errorf("container view missing %q", want)
+		}
+	}
+	if strings.Contains(one, "apt-get") {
+		t.Error("packages inside a container are fixed by a newer image, not apt-get")
+	}
+
+	host.FilterPackage("libcurl4")
+	host.AddContainers(cs, true)
+	pkgView, _ := host.SelectContainer("web")
+	b.Reset()
+	pkgView.WriteText(&b)
+	if s := b.String(); strings.Contains(s, "apt-get") || !strings.Contains(s, "更新镜像后重建容器") || !strings.Contains(s, "CVE-2025-1111") {
+		t.Errorf("--container web --pkg libcurl4:\n%s", s)
+	}
+	host.FilterPackage("")
+
+	slimRep, _ := host.SelectContainer("bbbbbbbbbbbb")
+	b.Reset()
+	slimRep.WriteText(&b)
+	if s := b.String(); !strings.Contains(s, "镜像里没有软件源索引") || strings.Contains(s, "apt-get update 后重新扫描") {
+		t.Errorf("image without apt lists:\n%s", s)
+	}
+
+	var j bytes.Buffer
+	host.WriteJSON(&j)
+	var parsed struct {
+		Containers []struct {
+			Name   string
+			Status string
+			Report *struct{ Findings []json.RawMessage }
+		}
+	}
+	json.Unmarshal(j.Bytes(), &parsed)
+	if len(parsed.Containers) != 4 || parsed.Containers[0].Status != "scanned" || len(parsed.Containers[0].Report.Findings) != 1 {
+		t.Errorf("json containers: %+v", parsed.Containers)
+	}
 }

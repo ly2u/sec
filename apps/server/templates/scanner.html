@@ -29,6 +29,7 @@ sha256sum -c --ignore-missing SHA256SUMS</code></pre>
 <h2>使用</h2>
 <pre><code>sudo secwatch scan                 # 一屏看完：结论、要处理的软件包、修复命令
 sudo secwatch scan --pkg openssh   # 只看一个软件包：全部漏洞、升级和验证命令
+sudo secwatch scan --container db  # 只看一个容器的结果
 sudo secwatch scan --all           # 完整报告：全部结果、参考链接、说明
 sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 <p>用 root 运行才能完整检查：哪些服务对公网监听、升级后哪些进程还在使用旧的库、内核是否需要重启。非 root 也能运行，但这几项会缺失。</p>
@@ -48,13 +49,16 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
   ……
   另有 42 个计划处理、15 个低优先级的软件包未列出（secwatch scan --all 查看）
 
-还需留意
-  · 未检查：caddy（第三方源，请关注其官方公告）；容器内的 mariadbd（可用 trivy image 扫描镜像）
+容器（2 个运行中，检查了容器内的系统软件包）
+  容器     系统          结果
+  mariadb  Ubuntu 24.04  ✗ 2 个需要尽快处理（共 9 个软件包有更新）
+  app                    未检查：精简镜像（没有系统信息和软件包数据库）
 
 怎么修（依次执行）
   1. sudo apt-get update &amp;&amp; sudo apt-get upgrade --with-new-pkgs  # 安装全部安全更新
-  2. sudo reboot                                                  # 让新内核和已升级的服务生效
-  3. secwatch scan                                                # 再查一次，确认已修复</code></pre>
+  2. secwatch scan --container mariadb                            # 容器 mariadb 要靠更新镜像修复，这里有方法
+  3. sudo reboot                                                  # 让新内核和已升级的服务生效
+  4. secwatch scan                                                # 再查一次，确认已修复</code></pre>
 
 <h3>优先级</h3>
 <div class="tablewrap">
@@ -87,7 +91,8 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 </div>
 <p>CPU 架构：x86_64（amd64）、ARM64。</p>
 <p>不经软件包安装的软件（宝塔、LNMP 一键包、源码编译、官方二进制、nvm 等）会按程序路径识别版本并对照上游数据，目前支持：{% for slug, rule in products.items() %}<a href="/product/{{ slug }}">{{ rule.name }}</a>{% if not loop.last %}、{% endif %}{% endfor %}。</p>
-<p class="small muted">暂不检查：容器内部的软件、Python/Node 等语言依赖包、Windows 和 macOS。未列出的问题不代表没有漏洞。</p>
+<p>以 root 运行时还会检查<strong>运行中 Docker 容器内的系统软件包</strong>（Debian、Ubuntu、Alpine 镜像），通过只读方式读取容器文件，不调用 docker 命令；容器里的漏洞会给出更新镜像的方法。</p>
+<p class="small muted">暂不检查：未运行的镜像、RPM 系统的容器、Python/Node 等语言依赖包、Windows 和 macOS。未列出的问题不代表没有漏洞。</p>
 
 <h2>自建数据源</h2>
 <p>数据包是公开的静态文件，可以镜像到内网：<code>secwatch scan --bundle-url https://你的地址/bundles</code>。也可以完全离线运行：下载数据包后使用 <code>--offline --bundle 文件</code>。数据包都带有签名，扫描器只接受内置公钥（<a href="/keys/bundle-signing.pub">bundle-signing.pub</a>）签名的数据。</p>

@@ -137,7 +137,7 @@
 - 路径不在规则中、但正在运行的程序（通过 `/proc/*/exe` 发现，且不属于任何软件包）
 - 第三方软件源的软件包（nginx.org、Docker、NodeSource、sury、PGDG 等），从包版本中提取上游版本
 - 静态编译进其他程序的组件，目前支持 nginx 内置的 OpenSSL（解析 `nginx -V` 输出）
-- 容器内运行的相关程序：只识别并提示，不检查容器内部
+- 容器内运行的相关程序：由下文“容器”一节的容器扫描覆盖
 
 首批覆盖 12 个产品：nginx、PHP、Node.js、OpenSSL、OpenSSH、Redis、MySQL、MariaDB、Apache httpd、PostgreSQL、Docker Engine、containerd。
 
@@ -187,15 +187,16 @@
 - 在 `0.0.0.0` 或 `::` 上监听的受影响服务排在更前面。
 - 不主动探测公网。
 
-### Docker
+### 容器（已实现，借鉴 Trivy 的思路）
 
-V0.1 只做三件事：
+以 root 在宿主机上运行时，扫描器会检查**运行中容器内的系统软件包**，不需要 docker 命令或 API：
 
-1. 列出运行中的容器和镜像
-2. 标注"容器内未扫描"
-3. 推荐使用 `trivy image` 扫描
+1. **发现**：遍历 `/proc`，挑出挂载命名空间与自身不同、且 cgroup 中带有 docker/containerd/crio/libpod 容器 ID 的进程（systemd 沙箱、snap 也有独立命名空间，但没有容器 ID，因此不算）。每个容器取 PID 最小的进程。名称和镜像从 `/var/lib/docker/containers/<ID>/config.v2.json` 读取，经白名单正则校验，不合格就只显示 ID。
+2. **读取**：经 `/proc/PID/root` 访问容器的根文件系统，所有路径用 `openat2(RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS)` 解析，效果等同于 chroot：容器里的绝对路径或 `../` 符号链接**不可能指向宿主机文件**；只接受普通文件和目录（防止 FIFO 卡住扫描）。需要 Linux 5.6 以上。不执行容器里的任何程序。
+3. **判定**：识别容器的系统版本，按需下载对应发行版的数据包（同一版本只下载一次），用与宿主机相同的匹配逻辑判定。镜像通常删除了 apt 索引，此时结论标为“可能受影响”。不支持的情况如实标为“未检查”：精简镜像（无 os-release 或包数据库）、不在支持范围的系统版本、RPM 系统的容器（读取 rpmdb 需要执行 rpm）。
+4. **报告**：默认视图中每个容器一行；`--container NAME` 查看单个容器（可配合 `--pkg`、`--all`）。修复建议是拉取新镜像并重建容器，**不建议在容器内升级**。容器中的 P0/P1 同样会使退出码为 3。`--no-containers` 可关闭；最多检查 50 个容器。
 
-深度扫描放在 V0.2。
+暂不覆盖：未运行的镜像、容器内非软件包安装的程序（Go 程序见下一项）。
 
 ---
 

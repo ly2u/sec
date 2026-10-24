@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ly2u/sec/scanner/internal/container"
 	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
@@ -42,16 +43,20 @@ type Report struct {
 	Runtime    *procinfo.Report  `json:"runtime"`
 	ThirdParty []system.Package  `json:"third_party_packages"`
 	// L2: software installed outside the distribution's package manager.
-	L2            *l2.Result           `json:"l2"`
-	L2Evaluated   bool                 `json:"l2_evaluated"`
-	L2NoData      []string             `json:"l2_products_without_data,omitempty"`
-	Notes         []string             `json:"notes"`
-	Commands      map[string][]Command `json:"-"`
-	kind          version.Kind
-	distro        string
-	showAll       bool
-	only          string // --pkg: show one package in full
-	stalePackages map[string]bool
+	L2          *l2.Result `json:"l2"`
+	L2Evaluated bool       `json:"l2_evaluated"`
+	L2NoData    []string   `json:"l2_products_without_data,omitempty"`
+	// Containers: running containers scanned through /proc/PID/root.
+	Containers        []ContainerResult `json:"containers"`
+	containersScanned bool
+	inContainer       *container.Target
+	Notes             []string             `json:"notes"`
+	Commands          map[string][]Command `json:"-"`
+	kind              version.Kind
+	distro            string
+	showAll           bool
+	only              string // --pkg: show one package in full
+	stalePackages     map[string]bool
 	// Color enables ANSI styles in the text report (set for colour terminals).
 	Color bool `json:"-"`
 }
@@ -191,6 +196,7 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 	if r.Findings == nil {
 		r.Findings = []match.Finding{}
 	}
+	r.Containers = []ContainerResult{}
 	sort.SliceStable(r.Findings, func(i, j int) bool {
 		a, b := r.Findings[i], r.Findings[j]
 		if a.Priority != b.Priority {
@@ -277,7 +283,7 @@ func (r *Report) Exceeds(level string) bool {
 			return true
 		}
 	}
-	return r.Summary.KEV > 0
+	return r.Summary.KEV > 0 || r.exceedsContainers(level)
 }
 
 func score(v *float64) float64 {

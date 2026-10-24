@@ -7,8 +7,10 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/ly2u/sec/scanner/internal/version"
@@ -18,6 +20,45 @@ import (
 type Host struct {
 	Root   string // "/" for the live system
 	NoExec bool   // forbid running any external program
+	fsys   *confined
+}
+
+// ContainerHost reads a container's root filesystem (normally
+// /proc/PID/root) with every path resolved inside it, never executing
+// anything. Close it when done.
+func ContainerHost(root string) (Host, error) {
+	c, err := openConfined(root)
+	if err != nil {
+		return Host{}, err
+	}
+	return Host{Root: root, NoExec: true, fsys: c}, nil
+}
+
+// Close releases a ContainerHost.
+func (h Host) Close() {
+	if h.fsys != nil {
+		h.fsys.close()
+	}
+}
+
+// Open opens a file of the scanned system for reading.
+func (h Host) Open(p string) (*os.File, error) {
+	if h.fsys != nil {
+		return h.fsys.open(p)
+	}
+	return os.Open(h.Path(p))
+}
+
+// ReadDir lists a directory of the scanned system.
+func (h Host) ReadDir(p string) ([]os.DirEntry, error) {
+	f, err := h.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	entries, err := f.ReadDir(-1)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	return entries, err
 }
 
 // Live reports whether Host is the running system (so /proc and exec apply).
@@ -26,7 +67,15 @@ func (h Host) Live() bool { return filepath.Clean(h.Root) == "/" }
 // Path joins p onto the scanned root.
 func (h Host) Path(p string) string { return filepath.Join(h.Root, p) }
 
-func (h Host) ReadFile(p string) ([]byte, error) { return os.ReadFile(h.Path(p)) }
+// ReadFile reads a file of the scanned system (at most 256 MiB).
+func (h Host) ReadFile(p string) ([]byte, error) {
+	f, err := h.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, 256<<20))
+}
 
 // OS identifies the distribution and the bundle that covers it.
 type OS struct {

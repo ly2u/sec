@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ly2u/sec/scanner/internal/container"
 	"github.com/ly2u/sec/scanner/internal/system"
 )
 
@@ -303,15 +304,9 @@ func (d *discovery) processes() {
 	d.res.Containers = dedupeContainers(d.res.Containers)
 }
 
-var containerRe = regexp.MustCompile(`(?:docker|containerd|crio|libpod)[-/:]([0-9a-f]{12,64})`)
-
 func containerID(base string) string {
-	data, err := os.ReadFile(filepath.Join(base, "cgroup"))
-	if err != nil {
-		return ""
-	}
-	if m := containerRe.FindStringSubmatch(string(data)); m != nil {
-		return m[1][:12]
+	if id := container.ID(base); id != "" {
+		return id[:12]
 	}
 	return ""
 }

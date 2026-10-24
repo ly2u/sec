@@ -196,13 +196,12 @@ func loadAptIndex(h Host) *aptIndex {
 		versions: map[string]map[string]Origin{}, labels: map[string]string{},
 		official: map[string][]string{}, third: map[string]bool{}, officialSrc: map[string]bool{},
 	}
-	dir := h.Path("var/lib/apt/lists")
-	entries, err := os.ReadDir(dir)
+	entries, err := h.ReadDir("var/lib/apt/lists")
 	if err != nil {
 		return idx
 	}
 	for _, e := range entries {
-		idx.addList(h, dir, e.Name())
+		idx.addList(h, e.Name())
 	}
 	return idx
 }
@@ -224,7 +223,7 @@ var listSuffixes = map[string]func(io.Reader) (io.Reader, error){
 	},
 }
 
-func (idx *aptIndex) addList(h Host, dir, name string) {
+func (idx *aptIndex) addList(h Host, name string) {
 	i := strings.LastIndex(name, "_Packages")
 	if i < 0 {
 		return
@@ -238,7 +237,7 @@ func (idx *aptIndex) addList(h Host, dir, name string) {
 		idx.skipped++ // unknown index compression; packages fall back to third-party
 		return
 	}
-	f, err := os.Open(filepath.Join(dir, name))
+	f, err := h.Open(filepath.Join("var/lib/apt/lists", name))
 	if err != nil {
 		return
 	}
@@ -476,7 +475,7 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 	inv := &Inventory{}
 	switch o.Kind {
 	case version.Deb:
-		f, err := os.Open(h.Path("var/lib/dpkg/status"))
+		f, err := h.Open("var/lib/dpkg/status")
 		if err != nil {
 			return nil, fmt.Errorf("read dpkg status: %w", err)
 		}
@@ -487,7 +486,7 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 		}
 		idx := loadAptIndex(h)
 		if idx.lists == 0 {
-			inv.Notes = append(inv.Notes, "未找到 apt 软件源索引（/var/lib/apt/lists 为空，可能已被清理），无法核实软件包来源；结论会降级为“可能受影响”。执行 apt-get update 后重新扫描可获得确定结论。")
+			inv.Notes = append(inv.Notes, NoteNoAptLists)
 		}
 		if idx.skipped > 0 {
 			inv.Notes = append(inv.Notes, fmt.Sprintf("有 %d 个压缩格式的软件源索引未解析，相应软件包按第三方处理。", idx.skipped))
@@ -512,7 +511,7 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 		vendor := map[string]string{"rocky": "rocky", "alma": "almalinux"}[o.Distro]
 		inv.Packages = ParseRPMQuery(out, vendor)
 	case version.APK:
-		f, err := os.Open(h.Path("lib/apk/db/installed"))
+		f, err := h.Open("lib/apk/db/installed")
 		if err != nil {
 			return nil, fmt.Errorf("read apk database: %w", err)
 		}
@@ -525,3 +524,7 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 	sort.Slice(inv.Packages, func(i, j int) bool { return inv.Packages[i].Name < inv.Packages[j].Name })
 	return inv, nil
 }
+
+// NoteNoAptLists is added when /var/lib/apt/lists is empty (common in
+// container images, which delete it to save space).
+const NoteNoAptLists = "未找到 apt 软件源索引（/var/lib/apt/lists 为空，可能已被清理），无法核实软件包来源；结论会降级为“可能受影响”。执行 apt-get update 后重新扫描可获得确定结论。"

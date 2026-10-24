@@ -189,6 +189,9 @@ func reasons(g *pkgGroup) string {
 func (r *Report) writeBrief(t term) {
 	t.paint(cBold, "LY2U SecWatch "+r.Scanner)
 	line := " · " + r.OS.Name
+	if r.inContainer != nil {
+		line = " · " + r.containerBrief() + " · " + r.OS.Name
+	}
 	if r.Kernel.Running != "" {
 		line += " · 内核 " + r.Kernel.Running
 		if r.Kernel.NewerInstalled {
@@ -221,8 +224,12 @@ func (r *Report) writeSummary(t term) {
 		}
 	}
 	fmt.Fprintln(t)
+	who := ""
+	if len(r.Containers) > 0 {
+		who = "本机"
+	}
 	if len(fixable) == 0 {
-		t.paint(cGreen, "✓ 没有需要升级的软件包")
+		t.paint(cGreen, "✓ "+who+"没有需要升级的软件包")
 		fmt.Fprintln(t, "：已安装的版本均包含发行版已发布的全部安全修复。")
 	} else {
 		switch {
@@ -233,7 +240,7 @@ func (r *Report) writeSummary(t term) {
 		default:
 			t.paint(cBold, "! 有安全更新")
 		}
-		msg := fmt.Sprintf("：%d 个软件包有安全更新", len(fixable))
+		msg := fmt.Sprintf("：%s%d 个软件包有安全更新", who, len(fixable))
 		if n := count["P0"] + count["P1"]; n > 0 {
 			msg += fmt.Sprintf("，%d 个需要尽快处理", n)
 		}
@@ -243,23 +250,37 @@ func (r *Report) writeSummary(t term) {
 		fmt.Fprintln(t, msg)
 		r.writeTable(t, fixable)
 	}
+	r.writeContainers(t)
 	r.writeWatch(t, len(fixable) == 0)
-	if len(fixable) > 0 {
+	switch {
+	case r.inContainer != nil:
+		if len(fixable) > 0 {
+			r.writeContainerFix(t)
+		}
+	case len(fixable) > 0 || len(r.containersToFix()) > 0:
 		r.writeFix(t, fixable)
 	}
 
 	fmt.Fprintln(t)
 	example := "<软件包名>"
-	if len(fixable) > 0 {
-		if a := pkgArg(fixable[0].pkg); a != "" {
+	candidates := fixable
+	if len(candidates) == 0 {
+		candidates = r.group(func(f match.Finding) bool { return isUnfixed(f) && Notable(f) })
+	}
+	if len(candidates) > 0 {
+		if a := pkgArg(candidates[0].pkg); a != "" {
 			example = a
 		}
 	}
+	prefix := "secwatch scan "
+	if r.inContainer != nil {
+		prefix += "--container " + r.inContainer.Label() + " "
+	}
 	t.paint(cDim, "看某个软件包的漏洞和修复命令：")
-	t.paint(cCmd, "secwatch scan --pkg "+example)
+	t.paint(cCmd, prefix+"--pkg "+example)
 	fmt.Fprintln(t)
 	t.paint(cDim, "看完整报告（全部漏洞、验证命令、参考链接）：")
-	t.paint(cCmd, "secwatch scan --all")
+	t.paint(cCmd, prefix+"--all")
 	fmt.Fprintln(t)
 }
 
@@ -387,7 +408,7 @@ func (r *Report) writeWatch(t term, clean bool) {
 		if len(r.L2NoData) > 0 {
 			uncovered = append(uncovered, names(r.L2NoData)+"（暂无上游数据）")
 		}
-		if len(r.L2.Containers) > 0 {
+		if len(r.L2.Containers) > 0 && !r.containersScanned {
 			var ps []string
 			for _, c := range r.L2.Containers {
 				ps = append(ps, c.Name)
@@ -444,6 +465,7 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	fmt.Fprintln(t)
 	var steps [][2]string
 	cmd := func(c, comment string) { steps = append(steps, [2]string{c, comment}) }
+	host := len(fixable) > 0
 	if distro {
 		cmd(r.fullUpgradeCommand(), "安装全部安全更新")
 	}
@@ -457,7 +479,14 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 		}
 		cmd("secwatch scan --pkg "+a, fmt.Sprintf("%s 不是软件包安装的，系统升级不会更新它，按这里的方法单独升级", g.pkg))
 	}
+	for i, c := range r.containersToFix() {
+		if i == 3 {
+			break
+		}
+		cmd("secwatch scan --container "+c.Label(), "容器 "+c.Label()+" 要靠更新镜像修复，这里有方法")
+	}
 	switch {
+	case !host:
 	case kernel:
 		cmd("sudo reboot", "让新内核和已升级的服务生效")
 	case exposed:
@@ -607,6 +636,10 @@ func (r *Report) writeVulnList(t term, fs []match.Finding, title string) {
 func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	var out [][2]string
 	add := func(k, v string) { out = append(out, [2]string{k, v}) }
+	if r.inContainer != nil {
+		add("修复", "更新镜像后重建容器，不要在容器里直接升级（步骤见 secwatch scan --container "+r.inContainer.Label()+"）")
+		return out, nil
+	}
 	if g.l2 {
 		f := g.findings[0]
 		label := l2.MethodLabel[f.Method]

@@ -17,11 +17,13 @@ import (
 	"github.com/jedisct1/go-minisign"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/container"
 	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
 	"github.com/ly2u/sec/scanner/internal/report"
 	"github.com/ly2u/sec/scanner/internal/system"
+	"github.com/ly2u/sec/scanner/internal/version"
 )
 
 // Version is set at build time with -ldflags "-X main.Version=...".
@@ -42,6 +44,8 @@ const usage = `用法：
 scan 选项：
   --format table|json      输出格式（默认 table）
   --pkg NAME               只看一个软件包：全部漏洞、修复与验证命令（源码包名、软件包名或软件名）
+  --container NAME         只看一个容器的结果（容器名或 ID），可与 --pkg、--all 组合
+  --no-containers          不检查运行中的容器
   --all                    显示完整报告（全部漏洞、每个软件包的命令与参考链接）
   --no-color               不使用颜色（也可设置环境变量 NO_COLOR）
   --fail-on P0|P1|P2|P3|none  达到该优先级（或存在已被在野利用的漏洞）时退出码为 3，默认 P1
@@ -84,6 +88,8 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	only := fs.String("pkg", "", "")
 	noColor := fs.Bool("no-color", false, "")
 	failOn := fs.String("fail-on", "P1", "")
+	onlyContainer := fs.String("container", "", "")
+	noContainers := fs.Bool("no-containers", false, "")
 	offline := fs.Bool("offline", false, "")
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
@@ -132,11 +138,18 @@ func scan(args []string, stdout, stderr io.Writer) int {
 
 	var notes []string
 	if host.Live() && os.Geteuid() != 0 {
-		notes = append(notes, "未以 root 运行：其他用户的进程无法检查，补丁生效状态与暴露面可能不完整。")
+		notes = append(notes, "未以 root 运行：其他用户的进程无法检查，补丁生效状态与暴露面可能不完整，容器内部也无法检查。")
 	}
 
 	var res, upstream *bundle.Result
+	var fetch fetchFunc
 	if *bundlePath != "" {
+		fetch = func(distro, release string) (*bundle.Result, error) {
+			if distro == osInfo.Distro && release == osInfo.Release {
+				return res, nil
+			}
+			return nil, errors.New("离线模式只提供了本机系统的数据包")
+		}
 		res, err = loadOffline(*bundlePath, *sigPath, osInfo.Distro, osInfo.Release, keys)
 		if err == nil && *upstreamPath != "" {
 			var uerr error
@@ -153,7 +166,10 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		res, err = src.Fetch(ctx, osInfo.Distro, osInfo.Release)
+		fetch = cachedFetch(func(distro, release string) (*bundle.Result, error) {
+			return src.Fetch(ctx, distro, release)
+		})
+		res, err = fetch(osInfo.Distro, osInfo.Release)
 		if err == nil {
 			var uerr error
 			if upstream, uerr = src.Fetch(ctx, "upstream", "1"); uerr != nil {
@@ -195,16 +211,27 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		File: res.File, GeneratedAt: res.Bundle.GeneratedAt, KeyID: res.KeyID, FromCache: res.FromCache,
 		Offline: *bundlePath != "",
 	}, notes, *all, &found, outcome)
+	if host.Live() && !*noContainers && os.Geteuid() == 0 {
+		rep.AddContainers(scanContainers(container.Discover("/proc", "/var/lib/docker"), fetch, *all), true)
+	}
 
+	if *only != "" {
+		rep.FilterPackage(*only)
+	}
+	rep.Color = !*noColor && colorTerminal(stdout)
+	if *onlyContainer != "" {
+		sub, ok := rep.SelectContainer(*onlyContainer)
+		if !ok {
+			fmt.Fprintf(stderr, "secwatch: 没有找到已检查的容器 %q（用 secwatch scan 查看容器列表；需要以 root 运行）\n", *onlyContainer)
+			return exitUsage
+		}
+		rep = sub
+	}
 	if *format == "json" {
 		if err := rep.WriteJSON(stdout); err != nil {
 			return fail("输出失败", err)
 		}
 	} else {
-		if *only != "" {
-			rep.FilterPackage(*only)
-		}
-		rep.Color = !*noColor && colorTerminal(stdout)
 		rep.WriteText(stdout)
 	}
 	if rep.Exceeds(*failOn) {
@@ -290,4 +317,89 @@ func colorTerminal(w io.Writer) bool {
 	}
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+type fetchFunc func(distro, release string) (*bundle.Result, error)
+
+// cachedFetch fetches each distro bundle once, however many containers use it.
+func cachedFetch(f fetchFunc) fetchFunc {
+	type entry struct {
+		res *bundle.Result
+		err error
+	}
+	seen := map[string]entry{}
+	return func(distro, release string) (*bundle.Result, error) {
+		k := distro + "-" + release
+		if e, ok := seen[k]; ok {
+			return e.res, e.err
+		}
+		res, err := f(distro, release)
+		seen[k] = entry{res, err}
+		return res, err
+	}
+}
+
+// maxContainers bounds the work on hosts running very many containers.
+const maxContainers = 50
+
+func scanContainers(targets []container.Target, fetch fetchFunc, all bool) []report.ContainerResult {
+	out := []report.ContainerResult{}
+	for i, t := range targets {
+		if i == maxContainers {
+			break
+		}
+		out = append(out, scanContainer(t, fetch, all))
+	}
+	return out
+}
+
+// noteNoListsInImage replaces the host advice (apt-get update) for images,
+// which routinely delete their package indexes.
+const noteNoListsInImage = "镜像里没有软件源索引（为减小体积常被删除），无法核实软件包来源，结论标为“可能受影响”。"
+
+// scanContainer evaluates the system packages inside one container, reading
+// its root filesystem through /proc/PID/root without executing anything.
+func scanContainer(t container.Target, fetch fetchFunc, all bool) report.ContainerResult {
+	c := report.ContainerResult{Target: t, Status: report.ContainerSkipped}
+	h, err := system.ContainerHost(t.Root)
+	if err != nil {
+		c.Reason = "无法读取容器的文件系统（需要 root 权限和 5.6 以上的内核）"
+		return c
+	}
+	defer h.Close()
+	o, err := system.DetectOS(h)
+	if err != nil {
+		c.Reason = "精简镜像（没有系统信息和软件包数据库）"
+		return c
+	}
+	c.OS = report.OSLabel(o.ID, o.Distro, o.Release, o.VersionID)
+	switch {
+	case !o.Supported:
+		c.Reason = "暂不支持该系统版本；如果是已停止维护的旧版本，建议换用新版本的基础镜像"
+		return c
+	case o.Kind == version.RPM:
+		c.Reason = "暂不支持 RPM 系统的容器"
+		return c
+	}
+	inv, err := system.ReadPackages(h, o)
+	if err != nil {
+		c.Reason = "读取容器内的软件包数据库失败"
+		return c
+	}
+	for i, n := range inv.Notes {
+		if n == system.NoteNoAptLists {
+			inv.Notes[i] = noteNoListsInImage
+		}
+	}
+	b, err := fetch(o.Distro, o.Release)
+	if err != nil {
+		c.Reason = "获取 " + c.OS + " 的漏洞数据失败：" + err.Error()
+		return c
+	}
+	result := match.Evaluate(match.Input{OS: o, Inventory: inv, Bundle: b.Bundle})
+	c.Report = report.Build(Version, o, inv, result, nil, report.DataInfo{
+		File: b.File, GeneratedAt: b.Bundle.GeneratedAt, KeyID: b.KeyID, FromCache: b.FromCache,
+	}, b.Warnings, all, nil, nil)
+	c.Status = report.ContainerScanned
+	return c
 }

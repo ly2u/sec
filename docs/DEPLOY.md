@@ -76,24 +76,18 @@ $P exec -T web python -c "import urllib.request; print(urllib.request.urlopen('h
 
 回滚：`$P down`（不加 `-v`，保留数据卷）。
 
-## 4. Origin 证书（站长操作）
+## 4. 证书：由 Caddy 自动申请（站长决定，2026-10-24）
 
-1. Cloudflare → SSL/TLS → Origin Server → Create Certificate，主机名只填 `sec.ly2u.com`，有效期 15 年。
-2. 站长自己登录服务器保存（私钥不要经过任何 AI 工具）：
+`sec.ly2u.com` 与现有站点一样，由 Caddy 自动向 Let's Encrypt 申请和续期（经 Cloudflare 走 HTTP-01 验证）。不需要手动处理私钥，也不需要给 Caddy 挂载证书目录，因此**不用重建 Caddy 容器，现有站点不中断**。
 
-```sh
-install -d -m 700 /opt/ly-stack/secrets/sec-origin
-nano /opt/ly-stack/secrets/sec-origin/cert.pem   # 粘贴证书
-nano /opt/ly-stack/secrets/sec-origin/key.pem    # 粘贴私钥
-chmod 644 /opt/ly-stack/secrets/sec-origin/cert.pem
-chmod 600 /opt/ly-stack/secrets/sec-origin/key.pem
-```
+开始第 5 步之前，站长确认两件事：
 
-## 5. 接入 Caddy（站长确认；挑访问量低的时段）
+- Cloudflare DNS 中 `sec.ly2u.com` 指向本机 IP，代理（橙色云朵）开启。
+- 该主机名当前的 SSL 模式**不是 Flexible**（Flexible 会让 Cloudflare 用 HTTP 回源，被 Caddy 重定向后形成循环）。第 6 步会单独设为 Full (strict)。
 
-分两步，每步单独回归，降低风险。
+备选方案：如果第 5 步证书申请失败且无法排除，改用 Cloudflare Origin Certificate：站长在 SSL/TLS → Origin Server 只为 `sec.ly2u.com` 签发，自己保存到 `/opt/ly-stack/secrets/sec-origin/{cert,key}.pem`（目录 700、私钥 600），Caddy 挂载该目录（需重建 Caddy 容器），站点块加 `tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem`。
 
-**5a. Caddy 加入 edge 网络并挂载证书目录（需要重建 Caddy 容器，现有站点中断几秒）**
+## 5. 接入 Caddy（站长确认）
 
 ```sh
 cd /opt/ly-stack
@@ -101,19 +95,20 @@ cp -a compose.yaml compose.yaml.bak-$(date -u +%Y%m%dT%H%M%SZ)
 cp -a Caddyfile Caddyfile.bak-$(date -u +%Y%m%dT%H%M%SZ)
 ```
 
-在 `compose.yaml` 的 caddy 服务中：
+**5a. 让运行中的 Caddy 加入 edge 网络（不重启）**
 
-- `networks` 增加 `secwatch-edge`（保留原有网络），并在文件末尾 `networks:` 中声明 `secwatch-edge: {external: true}`；
-- `volumes` 增加 `- /opt/ly-stack/secrets/sec-origin:/etc/caddy/certs:ro`（挂整个目录，以后换证书不受文件 inode 影响）。
+```sh
+docker network connect secwatch-edge ly-stack-caddy-1
+docker exec ly-stack-caddy-1 wget -qO- http://secwatch-web:8000/api/v1/health   # 应为 {"status":"ok"}
+```
+
+同时修改 `compose.yaml`，使以后重建时网络保持一致（**本步不执行 `up`**）：caddy 服务的 `networks` 增加 `secwatch-edge`（保留原有网络），文件末尾 `networks:` 中声明 `secwatch-edge: {external: true}`。然后：
 
 ```sh
 docker compose -f /opt/ly-stack/compose.yaml config -q && echo compose-ok
-docker compose -f /opt/ly-stack/compose.yaml up -d caddy
 ```
 
-立刻回归现有每个站点（HTTPS 200/重定向与之前一致、证书仍是 Let's Encrypt）。
-
-回滚：恢复 `compose.yaml.bak-*`，再 `docker compose -f /opt/ly-stack/compose.yaml up -d caddy`。
+回滚：`docker network disconnect secwatch-edge ly-stack-caddy-1`，恢复 `compose.yaml.bak-*`。
 
 **5b. 新增站点**
 
@@ -123,7 +118,6 @@ Caddyfile 是单文件挂载：**只能原地追加**（`cat >>`），不要用 
 cat >> /opt/ly-stack/Caddyfile <<'CADDY'
 
 sec.ly2u.com {
-	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 	encode zstd gzip
 	reverse_proxy secwatch-web:8000
 }
@@ -132,13 +126,21 @@ docker exec ly-stack-caddy-1 caddy validate --config /etc/caddy/Caddyfile --adap
 docker exec ly-stack-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
+观察证书申请（最多 3 分钟）：
+
+```sh
+docker logs --since 5m ly-stack-caddy-1 2>&1 | grep -iE "sec\.ly2u\.com|obtain|challenge|error" | tail -30
+```
+
+应看到为 `sec.ly2u.com` 成功获取证书。**如果失败，不要反复 reload 重试**（Let's Encrypt 对失败验证有频率限制），收集日志停下汇报。
+
 验证并汇报：
 
-- `curl --noproxy '*' -sk --resolve sec.ly2u.com:443:127.0.0.1 https://sec.ly2u.com/api/v1/health` → `{"status":"ok"}`
-- `openssl s_client` 三种情况复测：无 SNI、伪造 SNI 仍拿不到证书；SNI 为 `sec.ly2u.com` 时是 Cloudflare Origin 证书。
-- 现有站点再回归一次。
+- `curl --noproxy '*' -sS --resolve sec.ly2u.com:443:127.0.0.1 https://sec.ly2u.com/api/v1/health` → `{"status":"ok"}`（不加 `-k`，证书应被信任）
+- `openssl s_client` 三种情况复测：无 SNI、伪造 SNI 仍拿不到证书；SNI 为 `sec.ly2u.com` 时是 Let's Encrypt 证书。
+- 现有每个站点回归（HTTPS 状态与重定向与之前一致）。
 
-回滚：恢复 `Caddyfile.bak-*`（用 `cat 备份 > Caddyfile` 原地写回），再 validate + reload。
+回滚：用 `cat Caddyfile.bak-* > Caddyfile` 原地写回，validate + reload；再按 5a 回滚。
 
 **不做**：80 端口兜底规则、防火墙改动（站长决定）。
 

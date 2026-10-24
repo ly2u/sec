@@ -264,6 +264,7 @@ worker 是常驻进程，以 PostgreSQL advisory lock 保证同一数据库只�
 
 1. **接入现有 Caddy（阶段 0 实测结论）**。本机 80/443 端口由 `ly-stack` 项目中的 Caddy 容器占用，Caddyfile 位于 `/opt/ly-stack/Caddyfile`。**不另起公网 Caddy。** 由于 Caddy 运行在容器里，它访问不到宿主机的 `127.0.0.1`，因此采用以下网络方案：
    - 新建一个独立的外部网络 `secwatch-edge`（`docker network create --internal secwatch-edge`：Caddy 仍能连到 web，web 本身不能出网）。
+   - 证书：`sec.ly2u.com` 与现有站点一样由 Caddy 自动申请 Let's Encrypt 证书（站长决定，2026-10-24），Caddy 运行中加入网络，不重建、不中断现有站点；Cloudflare Origin Certificate 作为备选。
    - 生产使用独立的 `deploy/compose.prod.yaml`（项目名、镜像名均为 `secwatch`，web 不映射宿主机端口），执行步骤见 `docs/DEPLOY.md`。
    - SecWatch 这边**只有 `web` 容器**加入 `secwatch-edge`，且 web 只接 `db` 与 `secwatch-edge`；`postgres` 和 `worker` 只在 SecWatch 的内部网络中。
    - 在 `ly-stack` 的 compose 文件中，给 caddy 服务追加 `secwatch-edge` 网络（声明为 `external: true`），然后在 Caddyfile 中新增 `sec.ly2u.com` 站点，反代到 `secwatch-web:8000`。

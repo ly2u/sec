@@ -3,16 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}LY2U SecWatch{% endblock %}</title>
-<meta name="description" content="{% block description %}面向 VPS 和自建服务器的漏洞情报与只读自检工具{% endblock %}">
-<meta name="theme-color" content="#10213a">
+<title>{% block title %}LY2U SecWatch｜服务器漏洞情报与一键自检{% endblock %}</title>
+<meta name="description" content="{% block description %}实时汇总 CVE、在野利用（CISA KEV）与各 Linux 发行版修复状态；一条命令只读检查你的 VPS 是否受影响。{% endblock %}">
+<meta name="theme-color" content="#0a1220">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:site_name" content="LY2U SecWatch">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{{ self.description() }}">
+<meta property="og:type" content="website">
 <link rel="stylesheet" href="/static/site.css?v={{ css_version() }}">
 <link rel="alternate" type="application/rss+xml" title="LY2U SecWatch" href="/rss.xml">
 </head>
 <body>
 <header class="band">
   <div class="wrap top">
-    <a class="brand" href="/"><i class="brand-mark" aria-hidden="true"></i>LY2U <span>SecWatch</span></a>
+    <a class="brand" href="/"><img class="brand-mark" src="/favicon.svg" alt="" width="26" height="26">LY2U <span>SecWatch</span></a>
     {% set here = request.url.path %}
     <nav class="nav" aria-label="主导航">
       <a href="/kev"{% if here.startswith('/kev') %} aria-current="page"{% endif %}>在野利用</a>

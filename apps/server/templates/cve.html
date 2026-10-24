@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pri %}
-{% block title %}{{ v.id }}：{{ v.title or "漏洞详情" }} - LY2U SecWatch{% endblock %}
-{% block description %}{{ v.id }} 的评分、在野利用情况、各发行版修复状态与受影响版本。{% endblock %}
+{% block title %}{{ v.id }}{% if v.guidance.upstream_names %}（{{ v.guidance.upstream_names|join("、") }}）{% else %} {% endif %}{{ "已被在野利用" if v.kev else "漏洞详情" }}：影响范围与修复版本｜LY2U SecWatch{% endblock %}
+{% block description %}{{ v.id }}{% if v.cvss is not none %}，CVSS {{ "%.1f"|format(v.cvss) }}{% endif %}，{{ "已被确认在野利用" if v.kev else "未列入在野利用目录" }}。查看 Debian、Ubuntu、Rocky、AlmaLinux、Alpine 的修复状态与应升级到的版本。{% endblock %}
 {% block main %}
 {% set g = v.guidance %}
 <section class="panel summary {{ v.priority }}">

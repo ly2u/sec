@@ -48,6 +48,24 @@ def _percent(value):
 
 templates.env.filters["when"] = _date
 templates.env.filters["pct"] = _percent
+
+
+def _ago(value):
+    """'8 分钟前' for recent timestamps; falls back to the date."""
+    if value is None:
+        return "—"
+    value = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    minutes = int((datetime.now(UTC) - value).total_seconds() // 60)
+    if minutes < 1:
+        return "刚刚"
+    if minutes < 60:
+        return f"{minutes} 分钟前"
+    if minutes < 48 * 60:
+        return f"{minutes // 60} 小时前"
+    return value.strftime("%Y-%m-%d")
+
+
+templates.env.filters["ago"] = _ago
 templates.env.globals["css_version"] = lambda: stylesheet()[1]
 templates.env.globals["site_url"] = SITE_URL
 
@@ -56,6 +74,15 @@ def render(request, name, context, status=200, cache=PAGE_CACHE):
     response = templates.TemplateResponse(request, name, context, status_code=status)
     response.headers["Cache-Control"] = cache
     return response
+
+
+@router.get("/favicon.svg")
+def favicon():
+    return Response(
+        (HERE / "static" / "favicon.svg").read_bytes(),
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/static/site.css")

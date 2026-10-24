@@ -3,21 +3,26 @@
 {% block lookup %}{% endblock %}
 {% block band %}
 <div class="wrap hero">
-  <div>
-    <h1>你的服务器受这个漏洞影响吗？</h1>
-    <p class="lead">输入漏洞编号，查看各发行版是否已修复、该升级到哪个版本。</p>
+  <div class="hero-main">
+    {% if freshness %}<p class="live"><i class="dot" aria-hidden="true"></i>实时同步中{% for f in freshness[:3] %}<span>{{ f.source }} {{ f.last_success|ago }}</span>{% endfor %}</p>{% endif %}
+    <h1>你的服务器，<br>受这个漏洞影响吗？</h1>
+    <p class="lead">输入漏洞编号，查看 Debian、Ubuntu、Rocky、Alma、Alpine 是否已修复、该升级到哪个版本。</p>
     <form class="lookup" action="/go" method="get" role="search">
       <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号" autofocus>
       <button type="submit">查看</button>
     </form>
     <p class="hint">支持 CVE、GHSA、DSA、DLA、USN、RLSA、ALSA 等编号</p>
   </div>
-  <div class="scan-card">
-    <h2>一条命令检查整台机器</h2>
-    <p>只读运行，不改系统、不上传数据。宝塔、源码编译的软件也能识别。</p>
-<pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh
-sudo secwatch scan</code></pre>
-    <p class="small"><a href="/scanner">安装说明、签名校验与支持的系统</a></p>
+  <div class="hero-side">
+    {% include "_radar.html" %}
+    <div class="term" aria-label="一条命令检查整台机器">
+      <div class="term-head">一条命令检查整台机器</div>
+<pre><code><span class="pr">$</span> curl -fsSL https://sec.ly2u.com/install.sh | sh
+<span class="ok">签名有效：SecWatch 发布密钥 C7A3F417E9543893</span>
+<span class="pr">$</span> sudo secwatch scan
+<span class="ok">✓ 没有需要升级的软件包</span><span class="cursor" aria-hidden="true"></span></code></pre>
+      <p class="term-foot">只读运行，不改系统、不上传数据；宝塔、源码编译的软件也能识别。<a href="/scanner">安装说明</a></p>
+    </div>
   </div>
 </div>
 {% if risk.total %}

@@ -1,0 +1,20 @@
+{# Decorative radar: the "watch" in SecWatch. Blips use the risk colours. #}
+<svg class="radar" viewBox="0 0 240 240" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3dd6a6" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3dd6a6" stop-opacity=".55"/>
+    </linearGradient>
+  </defs>
+  <g class="rings" fill="none">
+    <circle cx="120" cy="120" r="112"/><circle cx="120" cy="120" r="80"/>
+    <circle cx="120" cy="120" r="48"/><circle cx="120" cy="120" r="16"/>
+    <path d="M120 4V236M4 120H236"/>
+  </g>
+  <g class="sweep"><path d="M120 120 L120 8 A112 112 0 0 1 199 41 Z" fill="url(#sweep)"/></g>
+  <circle class="blip b0" cx="168" cy="78" r="5"/>
+  <circle class="blip b1" cx="72" cy="150" r="4"/>
+  <circle class="blip b2" cx="176" cy="164" r="4"/>
+  <circle class="blip b3" cx="88" cy="70" r="3"/>
+  <circle class="blip b3" cx="140" cy="196" r="3"/>
+</svg>

@@ -346,3 +346,21 @@ def test_cve_page_says_what_to_do(client):
     assert "Debian 12 已发布修复" in html and "Ubuntu 24.04 还没有修复版本" in html
     assert "8.1.29" in html  # upstream fixed version
     assert 'style="' not in html
+
+
+def test_titles_and_icon(client):
+    import re as _re
+
+    def title(path):
+        return _re.search(r"<title>(.*?)</title>", client.get(path).text).group(1)
+
+    assert title("/") == "LY2U SecWatch｜服务器漏洞情报与一键自检"
+    assert title("/cve/CVE-2024-4577").startswith(
+        "CVE-2024-4577（PHP）已被在野利用：影响范围与修复版本"
+    )
+    assert title("/cve/CVE-2026-0001").startswith("CVE-2026-0001（nginx）漏洞详情")
+    assert title("/product/php") == "PHP 漏洞列表与修复版本｜LY2U SecWatch"
+    icon = client.get("/favicon.svg")
+    assert icon.status_code == 200 and icon.headers["content-type"].startswith("image/svg+xml")
+    assert 'property="og:title"' in client.get("/").text
+    assert title("/cve/CVE-2020-9999").startswith("CVE-2020-9999 漏洞详情")

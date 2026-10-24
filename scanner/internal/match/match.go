@@ -49,6 +49,7 @@ type Finding struct {
 	Severity         string        `json:"severity,omitempty"`
 	CVSS             *float64      `json:"cvss,omitempty"`
 	KEV              bool          `json:"kev"`
+	Ransomware       bool          `json:"ransomware,omitempty"`
 	EPSS             *float64      `json:"epss,omitempty"`
 	Refs             []string      `json:"refs"`
 	Origin           system.Origin `json:"origin"`
@@ -525,6 +526,9 @@ func enrich(f *Finding, entries []bundle.Entry) {
 		}
 		if strings.HasPrefix(e.Ref, "https://") {
 			refs[e.Ref] = true
+		}
+		if e.Ransomware {
+			f.Ransomware = true
 		}
 		if e.KEV {
 			f.KEV = true

@@ -81,8 +81,10 @@ type Entry struct {
 	Severity             *string  `json:"severity"`
 	CVSS                 *float64 `json:"cvss"`
 	KEV                  bool     `json:"kev"`
-	EPSS                 *float64 `json:"epss"`
-	Ref                  string   `json:"ref"`
+	// Ransomware: CISA lists the vulnerability as used in ransomware campaigns.
+	Ransomware bool     `json:"ransomware,omitempty"`
+	EPSS       *float64 `json:"epss"`
+	Ref        string   `json:"ref"`
 	// Urgency is the Debian security tracker rating (unimportant, low, medium,
 	// high, end-of-life); absent for other distros.
 	Urgency *string `json:"urgency"`

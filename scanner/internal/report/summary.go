@@ -10,6 +10,7 @@ import (
 	"github.com/ly2u/sec/scanner/internal/bundle"
 	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/version"
 )
 
 // The default view is a one-screen summary: a verdict, one table row per
@@ -151,7 +152,9 @@ func severity(cvss float64) string {
 // reasons says, in a few words, why a package is where it is in the table.
 func reasons(g *pkgGroup) string {
 	var b []string
-	if g.kev {
+	if g.ransom {
+		b = append(b, "已被勒索软件利用")
+	} else if g.kev {
 		b = append(b, "已被在野利用")
 	}
 	if e := maxEPSS(g.findings); e >= EPSSHigh {
@@ -467,6 +470,14 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 		cmd("sudo reboot", "让升级后的库生效；也可以只重启用到这些软件的服务")
 	}
 	cmd("secwatch scan", "再查一次，确认已修复")
+	if distro && r.kind == version.Deb {
+		defer func() {
+			t.paint(cDim, "  升级中的弹窗：问是否替换配置文件（如 sshd_config）时选“保留当前版本”（keep the local version），")
+			fmt.Fprintln(t)
+			t.paint(cDim, "  以免改掉 SSH 端口等设置；问重启哪些服务（Daemons using outdated libraries）时直接回车")
+			fmt.Fprintln(t)
+		}()
+	}
 	// Align the comments when the commands are of similar length.
 	w := 0
 	for _, st := range steps {
@@ -563,7 +574,9 @@ func (r *Report) writeVulnList(t term, fs []match.Finding, title string) {
 			id = f.CVEs[0]
 		}
 		var b []string
-		if f.KEV {
+		if f.Ransomware {
+			b = append(b, "已被勒索软件利用")
+		} else if f.KEV {
 			b = append(b, "已被在野利用")
 		}
 		if f.CVSS != nil {

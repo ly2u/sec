@@ -94,6 +94,7 @@ func TestSummaryIsATableWithVerdictAndCommands(t *testing.T) {
 		"  3. secwatch scan",
 		"# 再查一次，确认已修复",
 		"secwatch scan --pkg inetutils",
+		"选“保留当前版本”（keep the local version）",
 		"secwatch scan --all",
 	} {
 		if !strings.Contains(out, want) {
@@ -275,7 +276,7 @@ func realisticHost() *Report {
 func TestRealisticHostFitsOneScreen(t *testing.T) {
 	out := render(realisticHost())
 	t.Log("\n" + out)
-	if lines := strings.Count(out, "\n"); lines > 32 {
+	if lines := strings.Count(out, "\n"); lines > 34 {
 		t.Errorf("default report should fit one screen, got %d lines", lines)
 	}
 	for _, want := range []string{
@@ -290,7 +291,38 @@ func TestRealisticHostFitsOneScreen(t *testing.T) {
 			t.Errorf("missing %q", want)
 		}
 	}
+	r := realisticHost()
+	for i := range r.Findings {
+		if r.Findings[i].Package == "inetutils" {
+			r.Findings[i].Ransomware = true
+		}
+	}
+	if !strings.Contains(render(r), "  P0 立即  inetutils       5  已被勒索软件利用 · 利用概率 99% · 严重 9.8") {
+		t.Error("ransomware use is the strongest signal and replaces the plain KEV mark")
+	}
 	if strings.Contains(out, "manifest") {
 		t.Error("the unsigned-manifest caveat belongs to --all")
+	}
+}
+
+func TestFailOnThreshold(t *testing.T) {
+	r := outdatedHost(false) // P0 with KEV, P1, P2, P3
+	for level, want := range map[string]bool{"P0": true, "P1": true, "P3": true, "none": false} {
+		if r.Exceeds(level) != want {
+			t.Errorf("--fail-on %s: want %v", level, want)
+		}
+	}
+	// Only P2/P3 left: the default threshold passes, P2 fails.
+	var keep []match.Finding
+	for _, f := range r.Findings {
+		if f.Priority >= "P2" {
+			keep = append(keep, f)
+		}
+	}
+	r.Findings = keep
+	r.Summary.ByPriority = map[string]int{"P2": 20, "P3": 1}
+	r.Summary.KEV = 0
+	if r.Urgent() || !r.Exceeds("P2") || r.Exceeds("P1") {
+		t.Error("threshold comparison")
 	}
 }

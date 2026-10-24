@@ -263,9 +263,21 @@ func Notable(f match.Finding) bool {
 	return f.KEV || epss >= EPSSHigh || (f.Exposed && f.CVSS != nil && *f.CVSS >= CVSSCritical)
 }
 
-// Urgent decides the exit code: an actionable P0/P1, or anything in KEV.
-func (r *Report) Urgent() bool {
-	return r.Summary.ByPriority["P0"]+r.Summary.ByPriority["P1"] > 0 || r.Summary.KEV > 0
+// Urgent decides the default exit code: an actionable P0/P1, or anything in KEV.
+func (r *Report) Urgent() bool { return r.Exceeds("P1") }
+
+// Exceeds reports an actionable finding at level or above (P0 is highest), or
+// any exploited vulnerability; "none" never fails (--fail-on).
+func (r *Report) Exceeds(level string) bool {
+	if level == "none" {
+		return false
+	}
+	for p, n := range r.Summary.ByPriority {
+		if n > 0 && p <= level {
+			return true
+		}
+	}
+	return r.Summary.KEV > 0
 }
 
 func score(v *float64) float64 {

@@ -44,6 +44,7 @@ scan 选项：
   --pkg NAME               只看一个软件包：全部漏洞、修复与验证命令（源码包名、软件包名或软件名）
   --all                    显示完整报告（全部漏洞、每个软件包的命令与参考链接）
   --no-color               不使用颜色（也可设置环境变量 NO_COLOR）
+  --fail-on P0|P1|P2|P3|none  达到该优先级（或存在已被在野利用的漏洞）时退出码为 3，默认 P1
   --offline                不联网，使用 --bundle 指定的数据包
   --bundle FILE            离线数据包（*.json.zst），签名默认为 FILE.minisig
   --signature FILE         离线数据包的签名文件
@@ -54,7 +55,7 @@ scan 选项：
   --no-exec                不调用任何外部程序（RPM 系统需要调用 rpm，无法使用）
   --no-cache               不读写本地缓存（~/.cache/secwatch）
 
-退出码：0 无紧急问题 · 3 存在可处理的 P0/P1 问题或已被在野利用的漏洞 · 1 扫描失败 · 2 参数错误
+退出码：0 无紧急问题 · 3 存在可处理的 P0/P1 问题（见 --fail-on）或已被在野利用的漏洞 · 1 扫描失败 · 2 参数错误
 `
 
 func main() {
@@ -82,6 +83,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	all := fs.Bool("all", false, "")
 	only := fs.String("pkg", "", "")
 	noColor := fs.Bool("no-color", false, "")
+	failOn := fs.String("fail-on", "P1", "")
 	offline := fs.Bool("offline", false, "")
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
@@ -97,6 +99,12 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	}
 	if *format != "table" && *format != "json" {
 		fmt.Fprintln(stderr, "--format 只能是 table 或 json")
+		return exitUsage
+	}
+	switch *failOn {
+	case "P0", "P1", "P2", "P3", "none":
+	default:
+		fmt.Fprintln(stderr, "--fail-on 只能是 P0、P1、P2、P3 或 none")
 		return exitUsage
 	}
 	if *offline && *bundlePath == "" {
@@ -199,7 +207,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		rep.Color = !*noColor && colorTerminal(stdout)
 		rep.WriteText(stdout)
 	}
-	if rep.Urgent() {
+	if rep.Exceeds(*failOn) {
 		return exitImportant
 	}
 	return exitOK

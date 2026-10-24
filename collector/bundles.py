@@ -112,6 +112,7 @@ def enrichment_for(session, ids):
                 Vulnerability.severity,
                 EPSSScore.epss,
                 KEVEntry.is_active,
+                KEVEntry.ransomware,
             )
             .outerjoin(EPSSScore)
             .outerjoin(KEVEntry)
@@ -125,6 +126,11 @@ def enrichment_for(session, ids):
 # Must match the scanner's upstream comparator: no '-' and no '+'.
 UPSTREAM_EVENT = re.compile(r"[0-9][0-9A-Za-z.~_]{0,63}")
 logger = logging.getLogger(__name__)
+
+
+def ransomware(facts):
+    """CISA marks the CVE as used in ransomware campaigns (active KEV entries only)."""
+    return any(f.is_active is True and (f.ransomware or "").lower() == "known" for f in facts)
 
 
 def upstream_entries(session):
@@ -187,6 +193,7 @@ def upstream_entries(session):
                 "severity": severity,
                 "cvss": max(scores) if scores else None,
                 "kev": any(f.is_active is True for f in published),
+                "ransomware": ransomware(published),
                 "epss": max((float(f.epss) for f in published if f.epss is not None), default=None),
                 "ref": row.ref,
                 "urgency": None,
@@ -268,6 +275,7 @@ def bundle_entries(session, distro, release):
             "severity": selected.severity if selected else None,
             "cvss": max(scores) if scores else None,
             "kev": any(f.is_active is True for f in facts),
+            "ransomware": ransomware(facts),
             "epss": max((float(f.epss) for f in facts if f.epss is not None), default=None),
             "ref": row.source_url,
             # Debian tracker urgency (unimportant/low/medium/high/end-of-life);

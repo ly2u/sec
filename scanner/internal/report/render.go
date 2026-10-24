@@ -27,6 +27,7 @@ type pkgGroup struct {
 	target    string // highest fixed version among upgradable findings
 	exposed   bool
 	kev       bool
+	ransom    bool
 	maxCVSS   float64
 	l2        bool
 }
@@ -51,6 +52,7 @@ func (r *Report) group(filter func(match.Finding) bool) []*pkgGroup {
 		}
 		g.exposed = g.exposed || f.Exposed
 		g.kev = g.kev || f.KEV
+		g.ransom = g.ransom || f.Ransomware
 		if f.CVSS != nil && *f.CVSS > g.maxCVSS {
 			g.maxCVSS = *f.CVSS
 		}
@@ -106,7 +108,9 @@ func ids(fs []match.Finding, max int) string {
 
 func badges(g *pkgGroup) string {
 	var b []string
-	if g.kev {
+	if g.ransom {
+		b = append(b, "已被勒索软件利用（CISA KEV）")
+	} else if g.kev {
 		b = append(b, "已被在野利用（CISA KEV）")
 	}
 	if g.maxCVSS >= 0 {

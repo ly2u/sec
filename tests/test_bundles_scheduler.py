@@ -268,3 +268,14 @@ def test_bundles_volume_and_private_key_isolation():
     assert all("secrets" not in mount for mount in config["services"]["web"]["volumes"])
     assert config["services"]["worker"]["command"][-1] == "worker"
     assert "secrets" in (ROOT / ".dockerignore").read_text().splitlines()
+
+
+def test_ransomware_flag_requires_active_known_kev():
+    from types import SimpleNamespace as F
+
+    from collector.bundles import ransomware
+
+    assert ransomware([F(is_active=True, ransomware="Known")])
+    assert not ransomware([F(is_active=True, ransomware="Unknown")])
+    assert not ransomware([F(is_active=False, ransomware="Known")])  # removed from KEV
+    assert not ransomware([F(is_active=None, ransomware=None)])  # not in KEV at all

@@ -203,3 +203,15 @@ $P build && $P run --rm worker alembic upgrade head && $P up -d worker web
 ```
 
 出问题时：`docker tag secwatch:previous secwatch:current && $P up -d worker web`。
+
+### 2026-10-24 更新：Go 漏洞库（迁移 0005）
+
+本次更新新增表 `go_advisories` 和数据包 `golang-1`，按上面的“日常更新”执行即可（迁移只新增表，回滚到旧镜像不受影响）。部署后可立即导入并发布，不必等定时任务（每 6 小时一次）：
+
+```sh
+$P exec -T worker python -m collector.cli golang
+$P exec -T worker python -m collector.cli bundles
+```
+
+验收：第一条输出中 `entries` 应为数千条；`curl -s https://sec.ly2u.com/bundles/manifest.json | grep -o '"golang-1"'` 能找到。
+

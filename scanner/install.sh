@@ -16,10 +16,10 @@
 #   SECWATCH_VERIFY         auto (default) | minisign | openssl
 
 # Release signing key. Also published as keys/release-signing.pub in the repo.
-KEY_ID='RELEASE_KEY_ID'
-KEY_ID_RAW='RELEASE_KEY_ID_RAW'
-MINISIGN_PUB='RELEASE_MINISIGN_PUB'
-PUB_PEM='RELEASE_PUB_PEM'
+KEY_ID='C7A3F417E9543893'
+KEY_ID_RAW='933854e917f4a3c7'
+MINISIGN_PUB='RWSTOFTpF/Sjx2fTAEQxNY5fo2IVpUt/2h+SRqBTalrVx0qmvEE/OEi6'
+PUB_PEM='MCowBQYDK2VwAyEAZ9MARDE1jl+jYhWlS3/aH5JGoFNqWtXHSqa8QT84SLo='
 
 RELEASES='https://github.com/ly2u/sec/releases'
 

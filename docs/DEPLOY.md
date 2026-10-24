@@ -58,11 +58,11 @@ docker network create --internal secwatch-edge
 install -d -m 700 /opt/secwatch/backups
 $D exec -T postgres pg_dump -U secwatch -d secwatch -Fc > /opt/secwatch/backups/initial-from-dev.dump
 $D exec -T postgres pg_restore --list < /opt/secwatch/backups/initial-from-dev.dump > /dev/null && echo dump-ok
-$P up -d postgres
+$P up -d --wait postgres          # 等健康检查通过；首次启动要先初始化数据库，需要几秒到几十秒
 $P exec -T postgres pg_restore -U secwatch -d secwatch --no-owner --no-acl --exit-on-error \
   < /opt/secwatch/backups/initial-from-dev.dump
 $P run --rm worker alembic upgrade head
-$P up -d worker web
+$P up -d --wait worker web
 $P exec -T worker python -m collector.cli bundles
 $P exec -T web python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').read())"
 ```

@@ -29,7 +29,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          # Always the newest stable Go: the binaries carry its standard
+          # library, and older lines stop receiving security fixes.
+          go-version: stable
           cache-dependency-path: scanner/go.sum
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
       # Verifies every module against sum.golang.org, then the local cache against go.sum.
@@ -48,6 +50,13 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.Version=ci-${GITHUB_SHA::7}" -o ../dist/secwatch ./cmd/secwatch
           go build -o ../dist/mkbundle ./internal/tools/mkbundle
           ../dist/secwatch version
+      # Known vulnerabilities that the scanner's code can actually reach, in
+      # its dependencies and the Go standard library. Reported as warnings;
+      # Dependabot opens the upgrade PRs.
+      - name: govulncheck
+        working-directory: scanner
+        continue-on-error: true
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: Real-distro container tests
         run: scanner/testdata/integration/run.sh dist/secwatch dist/mkbundle
       - name: Installer

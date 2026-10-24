@@ -1,0 +1,29 @@
+# Upgrade PRs for the scanner's Go modules, the server's Python packages,
+# the container base image and the workflow actions. CI tests every PR.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /scanner
+    schedule:
+      interval: weekly
+    groups:
+      go-modules:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

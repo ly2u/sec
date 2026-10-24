@@ -41,6 +41,16 @@ secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 
 支持：Debian 11–13、Ubuntu 20.04/22.04/24.04、Rocky Linux 8/9、AlmaLinux 8/9、Alpine 3.22–3.24。
 
+## 更新
+
+漏洞数据每次扫描时自动获取最新的签名数据包，**不需要为了新漏洞更新程序**。程序本身有新版本时，报告最后会多一行提示；更新方法就是重新运行安装命令（会校验发布签名后覆盖旧版本）：
+
+```
+curl -fsSL https://sec.ly2u.com/install.sh | sh
+```
+
+程序只提示，从不自动更新自己。
+
 ## 判定状态
 
 | 状态 | 含义 |

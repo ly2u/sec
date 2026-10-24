@@ -215,3 +215,14 @@ $P exec -T worker python -m collector.cli bundles
 
 验收：第一条输出中 `entries` 应为数千条；`curl -s https://sec.ly2u.com/bundles/manifest.json | grep -o '"golang-1"'` 能找到。
 
+### 2026-10-24 更新：新版本提示
+
+按“日常更新”部署即可（无迁移）。部署后可立即执行一次，不必等定时任务（每小时一次）：
+
+```sh
+$P exec -T worker python -m collector.cli release
+$P exec -T worker python -m collector.cli bundles
+```
+
+验收：第一条输出 `"latest"` 是 GitHub 上的最新版本；`curl -s https://sec.ly2u.com/bundles/manifest.json | grep -o '"scanner":{[^}]*}'` 能看到同一个版本号。
+

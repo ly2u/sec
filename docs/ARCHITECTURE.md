@@ -205,7 +205,12 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 - **候选程序**：宿主机上正在运行的程序（`/proc/*/exe`，仅宿主机命名空间）、`/usr/local/bin`、`/usr/local/sbin`、`/opt/*`、`/opt/*/bin`，以及第三方源软件包安装在 bin 目录的文件；最多 400 个。属于官方软件包的文件跳过（发行版数据已覆盖）；产品规则已判定过的（如 Docker CE）跳过，避免重复。容器内则检查容器进程的 `/proc/PID/exe`，因此只有一个 Go 程序的精简镜像（distroless/scratch）也能判定。
 - **数据**：采集端新增 Go 漏洞库（OSV 的 `Go/all.zip`，CC-BY-4.0），表 `go_advisories`（迁移 0005），每 6 小时同步；签名数据包 `golang-1`，`package_key` 为 `module`，范围类型为 `SEMVER`，以 CVE 补充 CVSS/EPSS/KEV。`toolchain`（go 命令本身）不计入。
 - **判定**：版本比较使用原样复制的 `golang.org/x/mod/semver`（`scanner/internal/thirdparty/semver`）。程序自身的模块（主模块；xcaddy 这类构建取与程序同名的依赖，如 caddy → `github.com/caddyserver/caddy/v2`）命中为“确认受影响”；内置依赖与 Go 标准库命中为“可能受影响”，并且除非在 KEV 中，优先级最高为 P2——是否真能利用取决于程序是否用到相关代码，扫描器暂不做 govulncheck 式的符号可达性分析。
-- **报告**：每个程序一行（“Go 程序 / Go 程序内置组件”）；`--pkg 程序名` 列出每个漏洞来自哪个组件；修复建议为升级程序本身（第三方源的用包管理器命令）。离线模式用 `--go-bundle` 提供数据包。
+- **报告**：每个程序一行（“Go 程序 / Go 程序内置组件”）。`--pkg 程序名` 给出组件表（程序本身、Go 标准库、各依赖的当前版本、漏洞数、修复所需的最低版本）和具体步骤：从模块路径推出的项目发布页（GitHub/GitLab）、替换哪个文件、从 cgroup 读出的 systemd 服务的重启命令；第三方源的程序给包管理器命令。逐个 CVE 放在 `--pkg 程序名 --all`。离线模式用 `--go-bundle` 提供数据包。
+- **secwatch 自身**不在扫描范围内：它靠新版本提示保持更新；发布流程用最新稳定版 Go 编译，并在 `govulncheck` 发现可达漏洞时停止发布；Dependabot 负责依赖升级 PR。
+
+### 新版本提示（已实现）
+
+worker 每小时读取 GitHub 最新正式版本（只接受 `vX.Y.Z`，忽略草稿和预发布），写入 `manifest.json` 的 `scanner.latest`。这个字段不计入数据包指纹，发布新版本不会重建数据包。扫描器每次扫描本来就要读取 manifest，较新时在报告最后提示一行安装命令。manifest 尚未签名，所以这个字段只用作提示：扫描器**从不自动更新**，用户运行的安装脚本仍会校验发布签名。v0.1.3 及以前的版本不认识这个字段，不会提示。
 
 ---
 

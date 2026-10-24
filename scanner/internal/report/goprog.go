@@ -2,7 +2,9 @@ package report
 
 import (
 	"fmt"
+	"path"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -117,24 +119,93 @@ func (r *Report) goSteps(g *pkgGroup) []string {
 			steps = append(steps, r.upgradeCommand(pkgs)+"    # 从它原来的第三方软件源升级")
 		}
 	} else {
-		get := "到程序的官网或原来的下载渠道获取最新版本"
+		get := "到程序的官网或原来的下载渠道"
 		if f.Project != "" {
-			get = "到项目发布页下载最新版本：" + f.Project
+			get = "打开项目发布页 " + f.Project
 		}
+		get += "，找到最新版本里文件名带 linux 和 " + archNames() + "的文件，复制它的下载链接"
 		if own {
-			get += fmt.Sprintf("（至少 %s）", g.target)
+			get += fmt.Sprintf("（版本至少 %s）", g.target)
 		}
-		steps = append(steps, get+"；也可以用原来的安装方式更新，例如重新运行它的一键安装脚本")
-		steps = append(steps, "用新文件替换 "+f.Path+"（先备份旧文件）")
+		steps = append(steps, get+"。也可以直接用原来的安装方式更新（例如重新运行它的一键安装脚本），然后跳到最后一步")
+		file, name, ok := r.goFile(g)
+		unit := ""
+		if f.Unit != "" && unitRe.MatchString(f.Unit) {
+			unit = f.Unit
+		}
+		if !ok {
+			// The path is unusual: give no command that would contain it.
+			steps = append(steps, "备份并用新文件替换 "+f.Path+"，然后重启它")
+		} else {
+			tmp := "/tmp/" + name + ".new"
+			steps = append(steps,
+				"curl -fL -o "+tmp+" '<下载链接>'    # 换成上一步复制的链接；如果下载的是压缩包，先用 tar -xzf 或 unzip 解压，取出里面的 "+name,
+				"sudo cp -a "+file+" "+r.backupName(file)+"    # 备份旧版本")
+			if unit != "" {
+				steps = append(steps, "sudo systemctl stop "+unit)
+			}
+			steps = append(steps, "sudo install -m 755 "+tmp+" "+file+"    # 换上新版本")
+			switch {
+			case unit != "":
+				steps = append(steps, "sudo systemctl start "+unit+"    # 启动新版本")
+			case f.Unit == "" && (g.exposed || hasRunning(g)):
+				steps = append(steps, "用原来启动它的方式重新启动这个程序（它不是 systemd 服务）")
+			}
+		}
 	}
-	switch {
-	case f.Unit != "" && unitRe.MatchString(f.Unit):
+	if f.Method == "package" && f.Unit != "" && unitRe.MatchString(f.Unit) {
 		steps = append(steps, "sudo systemctl restart "+f.Unit+"    # 让新版本生效")
-	case f.Unit == "" && g.exposed:
-		steps = append(steps, "重启这个程序：它正在对外提供服务，但不是 systemd 服务，请用原来启动它的方式重启")
 	}
 	steps = append(steps, "secwatch scan --pkg "+pkgArg(g.pkg)+"    # 确认问题已消失")
 	return steps
+}
+
+// safeFile restricts paths that may appear in suggested commands.
+var safeFile = regexp.MustCompile(`^/[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$`)
+
+// goFile returns the program's path and file name if both are safe to put in
+// a command line.
+func (r *Report) goFile(g *pkgGroup) (file, name string, ok bool) {
+	file = g.findings[0].Path
+	if !safeFile.MatchString(file) || strings.Contains(file, "/..") || strings.Contains(file, "/./") {
+		return "", "", false
+	}
+	name = path.Base(file)
+	if !processName.MatchString(name) {
+		return "", "", false
+	}
+	return file, name, true
+}
+
+func (r *Report) backupName(file string) string {
+	return file + ".bak-" + r.ScannedAt.Format("20060102")
+}
+
+// goRollback undoes the replacement if the new version misbehaves.
+func (r *Report) goRollback(g *pkgGroup) string {
+	f := g.findings[0]
+	file, _, ok := r.goFile(g)
+	if f.Method == "package" || !ok {
+		return ""
+	}
+	cmd := "sudo cp -a " + r.backupName(file) + " " + file
+	if f.Unit != "" && unitRe.MatchString(f.Unit) {
+		cmd += " && sudo systemctl restart " + f.Unit
+	}
+	return cmd
+}
+
+func hasRunning(g *pkgGroup) bool { return g.findings[0].Unit != "" || g.exposed }
+
+// archNames names this machine's architecture as release files spell it.
+func archNames() string {
+	switch runtime.GOARCH {
+	case "amd64":
+		return "amd64（或 x86_64）"
+	case "arm64":
+		return "arm64（或 aarch64）"
+	}
+	return runtime.GOARCH
 }
 
 // goRemedy is the short form used by --all.
@@ -203,7 +274,7 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 			fmt.Fprintf(t, "  %s  %s\n", l[0], l[1])
 		}
 	} else {
-		t.paint(cBold, "  怎么修")
+		t.paint(cBold, "  怎么修（参考命令，逐条确认后执行）")
 		fmt.Fprintln(t)
 		for i, s := range r.goSteps(g) {
 			fmt.Fprintf(t, "    %d. ", i+1)
@@ -213,6 +284,11 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 			} else {
 				fmt.Fprint(t, s)
 			}
+			fmt.Fprintln(t)
+		}
+		if rb := r.goRollback(g); rb != "" {
+			t.paint(cDim, "    新版本有问题时回滚：")
+			t.paint(cCmd, rb)
 			fmt.Fprintln(t)
 		}
 		hint := "如果换成最新版本后仍有这些问题，说明作者还没用新版 Go 和依赖重新编译"

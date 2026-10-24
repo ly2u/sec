@@ -368,15 +368,29 @@ func TestGoComponentsAndSteps(t *testing.T) {
 		"Go 标准库            1.24.0         2  用 Go 1.25.13 或更高版本编译",
 		"golang.org/x/net     0.38.0         1  0.55.0 或更高",
 		"golang.org/x/crypto  0.39.0         1  暂无修复版本",
-		"1. 到项目发布页下载最新版本：https://github.com/komari-monitor/komari-agent/releases",
-		"3. sudo systemctl restart komari-agent.service",
-		"4. secwatch scan --pkg agent",
+		"1. 打开项目发布页 https://github.com/komari-monitor/komari-agent/releases，找到最新版本里文件名带 linux 和",
+		"2. curl -fL -o /tmp/agent.new '<下载链接>'",
+		"3. sudo cp -a /opt/komari/agent /opt/komari/agent.bak-",
+		"4. sudo systemctl stop komari-agent.service",
+		"5. sudo install -m 755 /tmp/agent.new /opt/komari/agent",
+		"6. sudo systemctl start komari-agent.service",
+		"7. secwatch scan --pkg agent",
+		"新版本有问题时回滚：sudo cp -a /opt/komari/agent.bak-",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Count(out, "\n") > 30 {
+	if strings.Count(out, "\n") > 32 {
 		t.Error("the program view should stay short")
+	}
+
+	// A path that is unsafe in a shell command gets prose, never a command.
+	for i := range r.Findings {
+		r.Findings[i].Path = "/opt/my app/agent;id"
+	}
+	odd := render(r)
+	if strings.Contains(odd, "sudo install") || strings.Contains(odd, "sudo cp") || !strings.Contains(odd, "备份并用新文件替换") {
+		t.Errorf("unsafe path in commands:\n%s", odd)
 	}
 }

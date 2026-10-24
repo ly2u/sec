@@ -501,8 +501,9 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 		"位置  /usr/local/bin/frpc（Go 程序）",
 		"问题出在这些组件（共 1 个漏洞）",
 		"用 Go 99.0.0 或更高版本编译",
-		"1. 到项目发布页下载最新版本：https://github.com/ly2u/sec/releases",
-		"2. 用新文件替换 /usr/local/bin/frpc（先备份旧文件）",
+		"1. 打开项目发布页 https://github.com/ly2u/sec/releases，找到最新版本里文件名带 linux 和",
+		"curl -fL -o /tmp/frpc.new '<下载链接>'",
+		"sudo install -m 755 /tmp/frpc.new /usr/local/bin/frpc",
 		"可能受影响",
 	} {
 		if !strings.Contains(one, want) {

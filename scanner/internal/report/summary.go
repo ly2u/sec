@@ -462,11 +462,14 @@ func (r *Report) writeWatch(t term, clean bool) {
 // writeFix is the numbered list of commands that ends the summary.
 func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	distro, kernel, exposed := false, false, false
-	var separate []*pkgGroup
+	var separate, thirdParty []*pkgGroup
 	for _, g := range fixable {
-		if !g.l2 || g.findings[0].Method == "package" {
-			distro = true // third-party repositories upgrade with the system too
-		} else {
+		switch {
+		case !g.l2:
+			distro = true
+		case g.findings[0].Method == "package":
+			thirdParty = append(thirdParty, g)
+		default:
 			separate = append(separate, g)
 		}
 		exposed = exposed || g.exposed || r.stalePackages[g.pkg]
@@ -478,8 +481,21 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	var steps [][2]string
 	cmd := func(c, comment string) { steps = append(steps, [2]string{c, comment}) }
 	host := len(fixable) > 0
-	if distro {
+	var thirdBins, units []string
+	for _, g := range thirdParty {
+		if pkgs, bad := safeNames(g.findings[0].Binaries); len(bad) == 0 {
+			thirdBins = append(thirdBins, pkgs...)
+		}
+		if u := g.findings[0].Unit; u != "" && unitRe.MatchString(u) {
+			units = append(units, u)
+		}
+	}
+	switch {
+	case distro:
+		// Third-party repositories are upgraded by the same command.
 		cmd(r.fullUpgradeCommand(), "安装全部安全更新")
+	case len(thirdBins) > 0:
+		cmd(r.upgradeCommand(dedupe(thirdBins)), "从原来的第三方软件源升级")
 	}
 	for i, g := range separate {
 		if i == 4 {
@@ -503,6 +519,11 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	}
 	switch {
 	case !host:
+	case !distro:
+		// Only programs outside the distribution: restarting them is enough.
+		if len(units) > 0 {
+			cmd("sudo systemctl restart "+strings.Join(dedupe(units), " "), "让新版本生效，不需要重启服务器")
+		}
 	case kernel:
 		cmd("sudo reboot", "让新内核和已升级的服务生效")
 	case exposed:

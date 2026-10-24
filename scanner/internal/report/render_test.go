@@ -368,14 +368,14 @@ func TestGoComponentsAndSteps(t *testing.T) {
 		"Go 标准库            1.24.0         2  用 Go 1.25.13 或更高版本编译",
 		"golang.org/x/net     0.38.0         1  0.55.0 或更高",
 		"golang.org/x/crypto  0.39.0         1  暂无修复版本",
-		"1. 打开项目发布页 https://github.com/komari-monitor/komari-agent/releases，找到最新版本里文件名带 linux 和",
+		"1. 打开 https://github.com/komari-monitor/komari-agent/releases，复制最新版中 linux-",
 		"2. curl -fL -o /tmp/agent.new '<下载链接>'",
 		"3. sudo cp -a /opt/komari/agent /opt/komari/agent.bak-",
 		"4. sudo systemctl stop komari-agent.service",
 		"5. sudo install -m 755 /tmp/agent.new /opt/komari/agent",
 		"6. sudo systemctl start komari-agent.service",
 		"7. secwatch scan --pkg agent",
-		"新版本有问题时回滚：sudo cp -a /opt/komari/agent.bak-",
+		"出问题时回滚：sudo cp -a /opt/komari/agent.bak-",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
@@ -392,5 +392,33 @@ func TestGoComponentsAndSteps(t *testing.T) {
 	odd := render(r)
 	if strings.Contains(odd, "sudo install") || strings.Contains(odd, "sudo cp") || !strings.Contains(odd, "备份并用新文件替换") {
 		t.Errorf("unsafe path in commands:\n%s", odd)
+	}
+}
+
+// Only programs outside the distribution need fixing: no server reboot, no
+// full system upgrade, no apt prompts; restart the services instead.
+func TestThirdPartyOnlyFixRestartsServices(t *testing.T) {
+	caddy := match.Finding{ID: "CVE-2099-1", CVEs: []string{"CVE-2099-1"}, Package: "caddy", Binaries: []string{"caddy"},
+		InstalledVersion: "2.10.2", Layer: "L2", Method: "package", Path: "/usr/bin/caddy", Module: "stdlib", ModuleVersion: "1.25.0",
+		Component: "Go 1.25.0 标准库", Unit: "caddy.service", Status: match.PotentiallyAffected, Fix: match.FixUpgrade,
+		FixedVersion: "1.25.5", CVSS: f64(9.8)}
+	o := system.OS{PrettyName: "Debian GNU/Linux 12 (bookworm)", Distro: "debian", Release: "12", Kind: version.Deb}
+	rt := &procinfo.Report{Listeners: []procinfo.Listener{{Address: "::", Port: 443, Public: true, Process: "caddy"}}, Exposed: map[string]bool{"caddy": true}}
+	r := Build("v0.1.5", o, &system.Inventory{}, match.Result{PackagesScanned: 10}, rt, DataInfo{KeyID: "X"}, nil, false, &l2.Result{}, &l2.Outcome{Findings: []match.Finding{caddy}})
+	out := render(r)
+	t.Log("\n" + out)
+	for _, want := range []string{
+		"1. sudo apt-get update && sudo apt-get install --only-upgrade caddy",
+		"2. sudo systemctl restart caddy.service",
+		"不需要重启服务器",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"sudo reboot", "upgrade --with-new-pkgs", "keep the local version"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("must not contain %q", unwanted)
+		}
 	}
 }

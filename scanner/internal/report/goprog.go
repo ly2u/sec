@@ -119,15 +119,15 @@ func (r *Report) goSteps(g *pkgGroup) []string {
 			steps = append(steps, r.upgradeCommand(pkgs)+"    # 从它原来的第三方软件源升级")
 		}
 	} else {
-		get := "到程序的官网或原来的下载渠道"
+		get := "到官网或原下载渠道"
 		if f.Project != "" {
-			get = "打开项目发布页 " + f.Project
+			get = "打开 " + f.Project
 		}
-		get += "，找到最新版本里文件名带 linux 和 " + archNames() + "的文件，复制它的下载链接"
+		get += "，复制最新版中 linux-" + archNames() + " 文件的下载链接"
 		if own {
-			get += fmt.Sprintf("（版本至少 %s）", g.target)
+			get += fmt.Sprintf("（至少 %s）", g.target)
 		}
-		steps = append(steps, get+"。也可以直接用原来的安装方式更新（例如重新运行它的一键安装脚本），然后跳到最后一步")
+		steps = append(steps, get)
 		file, name, ok := r.goFile(g)
 		unit := ""
 		if f.Unit != "" && unitRe.MatchString(f.Unit) {
@@ -139,7 +139,7 @@ func (r *Report) goSteps(g *pkgGroup) []string {
 		} else {
 			tmp := "/tmp/" + name + ".new"
 			steps = append(steps,
-				"curl -fL -o "+tmp+" '<下载链接>'    # 换成上一步复制的链接；如果下载的是压缩包，先用 tar -xzf 或 unzip 解压，取出里面的 "+name,
+				"curl -fL -o "+tmp+" '<下载链接>'    # 换成复制的链接；压缩包要先解压，取出其中的 "+name,
 				"sudo cp -a "+file+" "+r.backupName(file)+"    # 备份旧版本")
 			if unit != "" {
 				steps = append(steps, "sudo systemctl stop "+unit)
@@ -201,9 +201,9 @@ func hasRunning(g *pkgGroup) bool { return g.findings[0].Unit != "" || g.exposed
 func archNames() string {
 	switch runtime.GOARCH {
 	case "amd64":
-		return "amd64（或 x86_64）"
+		return "amd64/x86_64"
 	case "arm64":
-		return "arm64（或 aarch64）"
+		return "arm64/aarch64"
 	}
 	return runtime.GOARCH
 }
@@ -243,10 +243,13 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 
 	all := append(append([]match.Finding(nil), g.findings...), unfixed...)
 	comps := goComponents(all)
-	total := 0
-	for _, c := range comps {
-		total += c.vulns + c.unfixed
+	// The same vulnerability can sit in two components (the standard library
+	// and golang.org/x/net); the total counts it once.
+	ids := map[string]bool{}
+	for _, f := range all {
+		ids[f.ID] = true
 	}
+	total := len(ids)
 	cw, vw := width("组件"), width("当前版本")
 	for _, c := range comps {
 		cw = max(cw, min(width(c.label), 40))
@@ -287,13 +290,17 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 			fmt.Fprintln(t)
 		}
 		if rb := r.goRollback(g); rb != "" {
-			t.paint(cDim, "    新版本有问题时回滚：")
+			t.paint(cDim, "    出问题时回滚：")
 			t.paint(cCmd, rb)
 			fmt.Fprintln(t)
 		}
-		hint := "如果换成最新版本后仍有这些问题，说明作者还没用新版 Go 和依赖重新编译"
+		if f.Method != "package" {
+			t.paint(cDim, "    也可以用原来的安装方式（如一键安装脚本）更新，再执行最后一步确认。")
+			fmt.Fprintln(t)
+		}
+		hint := "换成最新版后仍有问题，说明作者还没用新版 Go 和依赖重新编译"
 		if f.Project != "" {
-			hint += "，可以把上面的组件表发到项目的 issue 里提醒作者"
+			hint += "，可把组件表发到项目 issue 提醒作者"
 		}
 		t.paint(cDim, "    "+hint+"。")
 		fmt.Fprintln(t)
@@ -305,13 +312,13 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 	}
 	fmt.Fprintln(t)
 	if onlyBundled {
-		t.paint(cDim, "  说明：这些漏洞在程序内置的组件中，是否真的能被利用取决于程序有没有用到相关功能，所以标为“可能受影响”，优先级不高于 P2（已被在野利用的除外）。")
+		t.paint(cDim, "  说明：漏洞都在内置组件中，能否被利用取决于程序是否用到相关功能，所以标为“可能受影响”。")
 		fmt.Fprintln(t)
 	}
 	if r.showAll {
 		r.writeVulnList(t, all, fmt.Sprintf("全部漏洞 %d 个", total))
 	} else {
-		t.paint(cDim, "  逐个漏洞的编号、评分和链接：secwatch scan --pkg "+pkgArg(g.pkg)+" --all")
+		t.paint(cDim, "  逐个漏洞：secwatch scan --pkg "+pkgArg(g.pkg)+" --all")
 		fmt.Fprintln(t)
 	}
 }

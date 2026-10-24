@@ -295,7 +295,7 @@ func TestL2EndToEnd(t *testing.T) {
 	for _, want := range []string{
 		"  P2 计划  Docker Engine       1  严重 9.2 · 第三方源",
 		"  P2 计划  Node.js             1  严重 9.2 · 需单独升级",
-		"1. sudo apt-get update && sudo apt-get upgrade --with-new-pkgs",
+		"1. sudo apt-get update && sudo apt-get install --only-upgrade docker-ce",
 		"2. secwatch scan --pkg Node.js",
 	} {
 		if !strings.Contains(text, want) {
@@ -501,7 +501,7 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 		"位置  /usr/local/bin/frpc（Go 程序）",
 		"问题出在这些组件（共 1 个漏洞）",
 		"用 Go 99.0.0 或更高版本编译",
-		"1. 打开项目发布页 https://github.com/ly2u/sec/releases，找到最新版本里文件名带 linux 和",
+		"1. 打开 https://github.com/ly2u/sec/releases，复制最新版中 linux-",
 		"curl -fL -o /tmp/frpc.new '<下载链接>'",
 		"sudo install -m 755 /tmp/frpc.new /usr/local/bin/frpc",
 		"可能受影响",

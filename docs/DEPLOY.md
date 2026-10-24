@@ -150,7 +150,7 @@ docker logs --since 5m ly-stack-caddy-1 2>&1 | grep -iE "sec\.ly2u\.com|obtain|c
 2. **只对这个主机名**设 Full (strict)：Rules → Configuration Rules → 主机名等于 `sec.ly2u.com` → SSL 设为 Full (strict)。不要改整个域名的 SSL 模式。
 3. 缓存：Rules → Cache Rules → 主机名等于 `sec.ly2u.com` → Eligible for cache，Edge TTL 选「Use cache-control header if present, bypass cache if not」，Browser TTL 选「Respect origin」。
 4. 限速（免费版一条规则）：路径以 `/api/` 开头或等于 `/go` → 每 IP 每 10 秒 60 次 → 阻止 10 秒。
-5. 验证：`curl -sI https://sec.ly2u.com/` 两次，第二次 `cf-cache-status: HIT`；`/bundles/manifest.json` 的 `cache-control` 是 `max-age=60`。
+5. 验证：`curl -s -o /dev/null -D - https://sec.ly2u.com/` 两次，第二次 `cf-cache-status: HIT`；`/bundles/manifest.json` 的 `cache-control` 是 `public, max-age=60, must-revalidate`。
 
 回滚：删除上述规则；SSL 规则删除后恢复为域名默认模式。
 

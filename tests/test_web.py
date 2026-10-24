@@ -316,3 +316,15 @@ def test_api(client):
     assert "/api/v1/kev" in schema["paths"] and "/cve/{vid}" not in schema["paths"]
     error = client.get("/api/v1/vulnerabilities/CVE-2030-1")
     assert error.headers["cache-control"] == "no-store"
+
+
+def test_head_requests_return_headers_without_body(client):
+    for path in ["/", "/cve/CVE-2024-4577", "/static/site.css", "/api/v1/kev", "/install.sh"]:
+        get = client.get(path)
+        head = client.head(path)
+        assert head.status_code == get.status_code == 200, path
+        assert head.content == b""
+        assert head.headers["cache-control"] == get.headers["cache-control"]
+        assert head.headers["content-type"] == get.headers["content-type"]
+    assert client.head("/cve/CVE-2030-12345").status_code == 404
+    assert client.post("/").status_code == 405

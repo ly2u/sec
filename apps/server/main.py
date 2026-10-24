@@ -20,6 +20,32 @@ app.include_router(bundle_router)
 app.include_router(api_router)
 app.include_router(page_router)
 
+
+class HeadAsGet:
+    """Answer HEAD like GET without a body (monitors, CDNs and `curl -I` use HEAD).
+
+    FastAPI routes declared with GET do not accept HEAD on their own.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] != "HEAD":
+            return await self.app(scope, receive, send)
+
+        async def headers_only(message):
+            if message["type"] == "http.response.body":
+                if message.get("more_body", False):
+                    return
+                message = {"type": "http.response.body", "body": b"", "more_body": False}
+            await send(message)
+
+        await self.app(dict(scope, method="GET"), receive, headers_only)
+
+
+app.add_middleware(HeadAsGet)
+
 # No scripts, no external resources: the policy states exactly what pages may load.
 CSP = (
     "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; "

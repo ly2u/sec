@@ -65,6 +65,27 @@ func (p Program) Project() string {
 	return ""
 }
 
+// Display is the name shown in reports: the project's repository name when the
+// file name is a generic part of it ("agent" from komari-agent), else the file
+// name (frpc stays frpc, caddy stays caddy).
+func (p Program) Display() string {
+	for _, m := range []string{p.Core.Path, p.MainPath} {
+		g := githubRe.FindStringSubmatch(m)
+		if g == nil {
+			g = gitlabRe.FindStringSubmatch(m)
+		}
+		if g == nil {
+			continue
+		}
+		repo := strings.TrimSuffix(g[2], ".git")
+		if repo != p.Name && len(repo) <= 40 && strings.Contains(strings.ToLower(repo), strings.ToLower(p.Name)) {
+			return repo
+		}
+		break
+	}
+	return p.Name
+}
+
 // unitOf returns the systemd service of a process from its cgroup, or "".
 func unitOf(procPid string) string {
 	data, err := os.ReadFile(filepath.Join(procPid, "cgroup"))
@@ -406,7 +427,7 @@ func evaluate(p Program, m Module, component, key string, entries []bundle.Entry
 		installed = "版本未知"
 	}
 	f := match.Finding{
-		ID: key, Package: p.Name, InstalledVersion: installed, Layer: "L2", Method: "go",
+		ID: key, Package: p.Display(), InstalledVersion: installed, Layer: "L2", Method: "go",
 		Path: p.Path, Component: component, Module: m.Path, ModuleVersion: m.Version, Project: p.Project(), Unit: p.Unit,
 	}
 	if p.Package != "" {

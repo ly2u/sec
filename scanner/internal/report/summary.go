@@ -3,6 +3,7 @@ package report
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -565,6 +566,10 @@ func (r *Report) FilterPackage(name string) { r.only = strings.ToLower(strings.T
 
 func (r *Report) matches(f match.Finding) bool {
 	if strings.ToLower(f.Package) == r.only {
+		return true
+	}
+	// A program can also be named by its file name (komari-agent or agent).
+	if f.Path != "" && strings.ToLower(filepath.Base(f.Path)) == r.only {
 		return true
 	}
 	for _, b := range f.Binaries {

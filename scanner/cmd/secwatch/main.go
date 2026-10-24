@@ -520,7 +520,7 @@ func goInstalls(progs []gobin.Program) []l2.Install {
 			v = "版本未知"
 		}
 		out = append(out, l2.Install{
-			Product: "go", ProductName: p.Name, Version: v, Method: method, Path: p.Path,
+			Product: "go", ProductName: p.Display(), Version: v, Method: method, Path: p.Path,
 			Packages: nonEmpty(p.Package), Running: p.Running, Note: p.Describe(),
 		})
 	}

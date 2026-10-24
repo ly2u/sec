@@ -422,3 +422,17 @@ func TestThirdPartyOnlyFixRestartsServices(t *testing.T) {
 		}
 	}
 }
+
+func TestPkgMatchesProgramFileName(t *testing.T) {
+	f := match.Finding{ID: "CVE-2099-9", CVEs: []string{"CVE-2099-9"}, Package: "komari-agent", InstalledVersion: "1.5.0",
+		Layer: "L2", Method: "go", Path: "/opt/komari/agent", Module: "stdlib", ModuleVersion: "1.24.0", Component: "Go 1.24.0 标准库",
+		Status: match.PotentiallyAffected, Fix: match.FixUpgrade, FixedVersion: "1.24.13", CVSS: f64(7.5)}
+	o := system.OS{PrettyName: "Debian GNU/Linux 12 (bookworm)", Distro: "debian", Release: "12", Kind: version.Deb}
+	r := Build("v0.1.5", o, &system.Inventory{}, match.Result{}, nil, DataInfo{KeyID: "X"}, nil, false, &l2.Result{}, &l2.Outcome{Findings: []match.Finding{f}})
+	for _, name := range []string{"komari-agent", "agent", "Komari-Agent"} {
+		r.FilterPackage(name)
+		if out := render(r); !strings.Contains(out, "komari-agent  1.5.0") {
+			t.Errorf("--pkg %s:\n%s", name, out)
+		}
+	}
+}

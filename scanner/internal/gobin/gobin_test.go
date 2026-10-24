@@ -165,3 +165,17 @@ func TestProjectAndUnit(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayName(t *testing.T) {
+	for _, c := range []struct{ name, core, main, want string }{
+		{"agent", "github.com/komari-monitor/komari-agent", "", "komari-agent"},
+		{"caddy", "github.com/caddyserver/caddy/v2", "caddy", "caddy"},
+		{"frpc", "github.com/fatedier/frp", "", "frpc"},
+		{"server", "", "example.com/x/server", "server"},
+	} {
+		p := Program{Name: c.name, Core: Module{Path: c.core}, MainPath: c.main}
+		if got := p.Display(); got != c.want {
+			t.Errorf("Display(%s, %s) = %q, want %q", c.name, c.core, got, c.want)
+		}
+	}
+}

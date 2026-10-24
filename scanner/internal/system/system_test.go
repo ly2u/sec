@@ -123,6 +123,10 @@ func debianRoot(t *testing.T) string {
 	write(t, root, lists+"nginx.org_packages_debian_dists_bookworm_InRelease", "Origin: nginx\nLabel: nginx\n")
 	write(t, root, lists+"nginx.org_packages_debian_dists_bookworm_nginx_binary-amd64_Packages",
 		"Package: nginx\nVersion: 1.26.2-1~bookworm\n")
+	// NodeSource publishes a placeholder Origin/Label.
+	write(t, root, lists+"deb.nodesource.com_node%5f22.x_dists_nodistro_InRelease", "Origin: . nodistro\nLabel: . nodistro\n")
+	write(t, root, lists+"deb.nodesource.com_node%5f22.x_dists_nodistro_main_binary-amd64_Packages",
+		"Package: mytool\nVersion: 0.1\n")
 	return root
 }
 
@@ -142,7 +146,7 @@ func TestAptOriginClassification(t *testing.T) {
 		"libssl3":        Official,   // exact match in the official list
 		"openssh-server": Official,   // outdated official: name only in official lists
 		"nginx":          ThirdParty, // newer than Debian's nginx: from nginx.org
-		"mytool":         ThirdParty, // in no list at all
+		"mytool":         ThirdParty, // only in a third-party list
 		// Old kernel ABI: its binary name left the archive, its source did not.
 		"linux-image-6.1.0-25-amd64": Official,
 		// A self-built kernel comes from a source the archive does not build.
@@ -155,6 +159,11 @@ func TestAptOriginClassification(t *testing.T) {
 	}
 	if len(inv.Notes) != 0 {
 		t.Errorf("unexpected notes: %v", inv.Notes)
+	}
+	for _, p := range inv.Packages {
+		if p.Name == "mytool" && p.OriginLabel != "deb.nodesource.com" {
+			t.Errorf("placeholder repository labels must fall back to the host, got %q", p.OriginLabel)
+		}
 	}
 }
 

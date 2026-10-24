@@ -74,7 +74,10 @@ func TestCompactReportLeadsWithVerdictAndEndsWithNextSteps(t *testing.T) {
 	if !strings.Contains(out, "内核：升级后需要重启系统才会生效") {
 		t.Error("kernel entries must say a reboot is needed")
 	}
-	// P2 is one line per package, capped.
+	// P2 is one short line per package (fits 80 columns), capped.
+	if !strings.Contains(out, "  lib00 → 1.0-1+deb12u1  1 个漏洞，最高 CVSS 7.5\n") {
+		t.Errorf("P2 one-liner format changed:\n%s", out)
+	}
 	if !strings.Contains(out, "…… 另有 5 个，使用 secwatch scan --all 查看") {
 		t.Errorf("P2 list must be capped at %d:\n%s", compactP2, out)
 	}

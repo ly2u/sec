@@ -544,9 +544,12 @@ func (r *Report) writeCompact(w io.Writer, fixable []*pkgGroup) {
 		section(w, fmt.Sprintf("%s（%s）：%d 个软件包", t.title, t.level, len(groups)))
 		width := 0
 		for _, g := range groups {
-			if n := len(g.pkg); n > width && n <= 24 {
+			if n := len(g.pkg); n > width {
 				width = n
 			}
+		}
+		if width > 16 {
+			width = 16 // keep one-line entries within an 80-column terminal
 		}
 		limit := len(groups)
 		if t.level == "P2" && limit > compactP2 {
@@ -554,7 +557,7 @@ func (r *Report) writeCompact(w io.Writer, fixable []*pkgGroup) {
 		}
 		for _, g := range groups[:limit] {
 			if t.level == "P2" && !g.l2 {
-				fmt.Fprintf(w, "  %-*s  %s → %s  %s\n", width, g.pkg, g.installed, g.target, compactFacts(g))
+				fmt.Fprintf(w, "  %-*s → %s  %s\n", width, g.pkg, g.target, shortFacts(g))
 				continue
 			}
 			fmt.Fprintf(w, "  %s  %s → %s\n", g.pkg, g.installed, g.target)
@@ -667,6 +670,23 @@ func compactFacts(g *pkgGroup) string {
 		b = append(b, "所在服务对外监听")
 	}
 	return strings.Join(b, "，")
+}
+
+// shortFacts is the one-line P2 summary: "11 个漏洞，最高 CVSS 10.0".
+func shortFacts(g *pkgGroup) string {
+	seen := map[string]bool{}
+	for _, f := range g.findings {
+		key := f.ID
+		if len(f.CVEs) == 1 {
+			key = f.CVEs[0]
+		}
+		seen[key] = true
+	}
+	out := fmt.Sprintf("%d 个漏洞", len(seen))
+	if g.maxCVSS >= 0 {
+		out += fmt.Sprintf("，最高 CVSS %.1f", g.maxCVSS)
+	}
+	return out
 }
 
 // writeNextSteps ends the report with what to do, in order.

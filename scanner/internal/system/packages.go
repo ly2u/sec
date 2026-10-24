@@ -260,6 +260,13 @@ func (idx *aptIndex) addList(h Host, dir, name string) {
 	if label == "" {
 		label = origin
 	}
+	if !readableLabel.MatchString(label) {
+		// Some repositories publish placeholders (NodeSource ". nodistro",
+		// "source=none"); the host the list came from is clearer.
+		if host, _, ok := strings.Cut(name, "_"); ok && hostName.MatchString(host) {
+			label = host
+		}
+	}
 	if strings.HasPrefix(origin, "UbuntuESM") {
 		idx.esm = true
 	}
@@ -290,6 +297,11 @@ func (idx *aptIndex) addList(h Host, dir, name string) {
 		}
 	})
 }
+
+var (
+	readableLabel = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ._/+-]{0,47}$`)
+	hostName      = regexp.MustCompile(`^[A-Za-z0-9.-]{1,253}$`)
+)
 
 // classify decides a dpkg package's origin. apt lists only hold the newest
 // version of each package, so an outdated (and therefore likely vulnerable)

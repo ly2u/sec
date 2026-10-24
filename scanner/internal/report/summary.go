@@ -237,10 +237,10 @@ func (r *Report) writeSummary(t term) {
 	fmt.Fprintln(t)
 	who := ""
 	if len(r.Containers) > 0 {
-		who = "本机"
+		who = "本机 "
 	}
 	if len(fixable) == 0 {
-		t.paint(cGreen, "✓ "+who+"没有需要升级的软件包")
+		t.paint(cGreen, "✓ "+strings.TrimSpace(who)+"没有需要升级的软件包")
 		fmt.Fprintln(t, "：已安装的版本均包含发行版已发布的全部安全修复。")
 	} else {
 		switch {
@@ -482,14 +482,18 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 		cmd(r.fullUpgradeCommand(), "安装全部安全更新")
 	}
 	for i, g := range separate {
-		if i == 2 {
+		if i == 4 {
 			break
 		}
 		a := pkgArg(g.pkg)
 		if a == "" {
 			continue
 		}
-		cmd("secwatch scan --pkg "+a, fmt.Sprintf("%s 不是软件包安装的，系统升级不会更新它，按这里的方法单独升级", g.pkg))
+		comment := fmt.Sprintf("%s 不是软件包安装的，系统升级不会更新它，这里有具体步骤", g.pkg)
+		if g.goProg {
+			comment = fmt.Sprintf("%s（%s）需要单独更新，这里有下载地址和具体步骤", g.pkg, g.findings[0].Path)
+		}
+		cmd("secwatch scan --pkg "+a, comment)
 	}
 	for i, c := range r.containersToFix() {
 		if i == 3 {
@@ -562,7 +566,18 @@ func (r *Report) writePackage(t term) {
 		fmt.Fprintf(t, "\n没有找到 %s 的漏洞：它已包含全部已知修复，或者名称不对（可以用源码包名、软件包名或软件名，如 openssh、openssh-server、Node.js）。\n", r.only)
 		return
 	}
+	goUnfixed := map[string][]match.Finding{}
+	for _, g := range unfixed {
+		if g.goProg {
+			goUnfixed[g.findings[0].Path] = append(goUnfixed[g.findings[0].Path], g.findings...)
+		}
+	}
 	for _, g := range fixable {
+		if g.goProg {
+			r.writeGoProgram(t, g, goUnfixed[g.findings[0].Path])
+			delete(goUnfixed, g.findings[0].Path)
+			continue
+		}
 		fmt.Fprintln(t)
 		t.paint(cBold, g.pkg)
 		if g.target != "" {
@@ -582,6 +597,16 @@ func (r *Report) writePackage(t term) {
 		r.writeVulnList(t, g.findings, fmt.Sprintf("可修复的漏洞 %d 个", vulnCount(g)))
 	}
 	for _, g := range unfixed {
+		if g.goProg {
+			if _, left := goUnfixed[g.findings[0].Path]; !left {
+				continue // shown with the program above
+			}
+			fmt.Fprintln(t)
+			t.paint(cBold, g.pkg)
+			fmt.Fprintf(t, "  %s  暂无修复版本（上游还没有发布修复）\n", displayVersion(g.installed))
+			r.writeVulnList(t, g.findings, fmt.Sprintf("暂无修复的漏洞 %d 个", vulnCount(g)))
+			continue
+		}
 		fmt.Fprintln(t)
 		t.paint(cBold, g.pkg)
 		fmt.Fprintf(t, "  %s  暂无修复（发行版尚未发布更新，目前没有可执行的升级）\n", g.installed)
@@ -711,45 +736,6 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	}
 	if len(bad) > 0 {
 		add("注意", "以下包名含异常字符，未写入命令，请手动核实："+strings.Join(bad, " "))
-	}
-	return out, bins
-}
-
-// goRemedy explains how to fix a Go program: a new release of the program
-// (or of its package), since its dependencies and Go version are compiled in.
-func (r *Report) goRemedy(g *pkgGroup) ([][2]string, []string) {
-	var out [][2]string
-	add := func(k, v string) { out = append(out, [2]string{k, v}) }
-	f := g.findings[0]
-	add("位置", f.Path+"（Go 程序）")
-	var comps []string
-	seen := map[string]bool{}
-	for _, x := range g.findings {
-		if x.Component != "" && !seen[x.Component] {
-			seen[x.Component] = true
-			comps = append(comps, x.Component)
-		}
-	}
-	var bins []string
-	if f.Method == "package" {
-		if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
-			add("修复", r.upgradeCommand(pkgs)+"（从原第三方软件源升级）")
-			bins = pkgs
-		}
-	} else if g.target != "" {
-		add("修复", fmt.Sprintf("把 %s 升级到 %s 或更高版本：用原来的方式重新下载或安装（系统升级不会更新它）", g.pkg, g.target))
-	} else {
-		add("修复", "换用程序的最新版本：用原来的方式重新下载或安装；如果是自己编译的，升级依赖或 Go 后重新编译")
-	}
-	if len(comps) > 0 {
-		sort.Strings(comps)
-		if len(comps) > 4 {
-			comps = append(comps[:4], fmt.Sprintf("等 %d 项", len(comps)))
-		}
-		add("说明", "部分漏洞来自程序内置的 "+strings.Join(comps, "、")+"。是否真的能被利用，取决于程序有没有用到相关功能，因此标为“可能受影响”；修复要靠用新版依赖或新版 Go 编译的程序版本。")
-	}
-	if g.exposed {
-		add("注意", "该程序正在对外提供服务，升级后需重启才会生效")
 	}
 	return out, bins
 }

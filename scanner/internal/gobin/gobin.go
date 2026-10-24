@@ -41,6 +41,40 @@ type Program struct {
 	Deps      []Module `json:"-"`
 	Running   bool     `json:"running,omitempty"`
 	Package   string   `json:"package,omitempty"` // owning third-party package, if any
+	MainPath  string   `json:"main_module,omitempty"`
+	Unit      string   `json:"unit,omitempty"` // systemd service running it
+}
+
+var (
+	githubRe = regexp.MustCompile(`^github\.com/([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})(?:/|$)`)
+	gitlabRe = regexp.MustCompile(`^gitlab\.com/([A-Za-z0-9][A-Za-z0-9_.-]{0,99})/([A-Za-z0-9._-]{1,100})(?:/|$)`)
+	unitRe   = regexp.MustCompile(`(?m)/system\.slice/(?:[A-Za-z0-9@._-]+\.slice/)*([A-Za-z0-9@._-]{1,128}\.service)(?:/|$)`)
+)
+
+// Project is where new releases of the program are published, derived from
+// its module path (GitHub and GitLab only); "" if unknown.
+func (p Program) Project() string {
+	for _, m := range []string{p.Core.Path, p.MainPath} {
+		if g := githubRe.FindStringSubmatch(m); g != nil && g[2] != "." && g[2] != ".." {
+			return "https://github.com/" + g[1] + "/" + strings.TrimSuffix(g[2], ".git") + "/releases"
+		}
+		if g := gitlabRe.FindStringSubmatch(m); g != nil && g[2] != "." && g[2] != ".." {
+			return "https://gitlab.com/" + g[1] + "/" + strings.TrimSuffix(g[2], ".git") + "/-/releases"
+		}
+	}
+	return ""
+}
+
+// unitOf returns the systemd service of a process from its cgroup, or "".
+func unitOf(procPid string) string {
+	data, err := os.ReadFile(filepath.Join(procPid, "cgroup"))
+	if err != nil {
+		return ""
+	}
+	if m := unitRe.FindSubmatch(data); m != nil {
+		return string(m[1])
+	}
+	return ""
 }
 
 const (
@@ -114,7 +148,7 @@ var majorSuffix = regexp.MustCompile(`/v[0-9]+$`)
 // module when it has a version; otherwise (xcaddy-style builds) the dependency
 // named like the binary, e.g. github.com/caddyserver/caddy/v2 for "caddy".
 func program(p, name string, bi *buildinfo.BuildInfo) Program {
-	prog := Program{Path: p, Name: name, GoVersion: GoSemver(bi.GoVersion)}
+	prog := Program{Path: p, Name: name, GoVersion: GoSemver(bi.GoVersion), MainPath: bi.Main.Path}
 	mod := func(m *debug.Module) Module {
 		if m.Replace != nil {
 			return Module{Path: m.Replace.Path, Version: moduleVersion(m.Replace.Version)}
@@ -154,6 +188,7 @@ type Candidate struct {
 	Open    string // path to open (may be /proc/PID/exe)
 	Path    string // path as the system sees it
 	Running bool
+	Unit    string // systemd service, for running host programs
 }
 
 // HostProcesses lists the executables of running processes in the scanner's
@@ -197,7 +232,11 @@ func processes(proc string, pids []int, host bool) []Candidate {
 			continue
 		}
 		seen[exe] = true
-		out = append(out, Candidate{Open: filepath.Join(base, "exe"), Path: exe, Running: true})
+		c := Candidate{Open: filepath.Join(base, "exe"), Path: exe, Running: true}
+		if host {
+			c.Unit = unitOf(base)
+		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -285,6 +324,9 @@ func Collect(cands []Candidate, owner Owner) []Program {
 		if i, ok := byPath[c.Path]; ok {
 			if i >= 0 {
 				out[i].Running = out[i].Running || c.Running
+				if out[i].Unit == "" {
+					out[i].Unit = c.Unit
+				}
 			}
 			continue
 		}
@@ -303,7 +345,7 @@ func Collect(cands []Candidate, owner Owner) []Program {
 			byPath[c.Path] = -1
 			continue
 		}
-		prog.Running, prog.Package = c.Running, pkg
+		prog.Running, prog.Package, prog.Unit = c.Running, pkg, c.Unit
 		byPath[c.Path] = len(out)
 		out = append(out, prog)
 	}
@@ -365,7 +407,7 @@ func evaluate(p Program, m Module, component, key string, entries []bundle.Entry
 	}
 	f := match.Finding{
 		ID: key, Package: p.Name, InstalledVersion: installed, Layer: "L2", Method: "go",
-		Path: p.Path, Component: component, Module: m.Path,
+		Path: p.Path, Component: component, Module: m.Path, ModuleVersion: m.Version, Project: p.Project(), Unit: p.Unit,
 	}
 	if p.Package != "" {
 		f.Method, f.Binaries = "package", []string{p.Package}

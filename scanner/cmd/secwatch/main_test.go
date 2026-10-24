@@ -497,10 +497,25 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 	scan(append(args, "--pkg", "frpc"), &stdout, &stderr)
 	one := stdout.String()
 	t.Log("\n" + one)
-	for _, want := range []string{"位置  /usr/local/bin/frpc（Go 程序）", "来自 Go ", "标准库", "可能受影响", "CVE-2099-1234"} {
+	for _, want := range []string{
+		"位置  /usr/local/bin/frpc（Go 程序）",
+		"问题出在这些组件（共 1 个漏洞）",
+		"用 Go 99.0.0 或更高版本编译",
+		"1. 到项目发布页下载最新版本：https://github.com/ly2u/sec/releases",
+		"2. 用新文件替换 /usr/local/bin/frpc（先备份旧文件）",
+		"可能受影响",
+	} {
 		if !strings.Contains(one, want) {
 			t.Errorf("--pkg frpc missing %q", want)
 		}
+	}
+	if strings.Contains(one, "CVE-2099-1234") {
+		t.Error("CVE numbers are behind --all; the default shows components and steps")
+	}
+	stdout.Reset()
+	scan(append(args, "--pkg", "frpc", "--all"), &stdout, &stderr)
+	if !strings.Contains(stdout.String(), "CVE-2099-1234") || !strings.Contains(stdout.String(), "来自 Go ") {
+		t.Errorf("--pkg frpc --all lists every vulnerability\n%s", stdout.String())
 	}
 
 	stdout.Reset()

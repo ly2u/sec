@@ -338,3 +338,45 @@ func TestUpdateHint(t *testing.T) {
 		t.Errorf("the hint is the last line:\n%s", out)
 	}
 }
+
+func TestGoComponentsAndSteps(t *testing.T) {
+	mk := func(id, mod, modv, fix, comp string) match.Finding {
+		f := match.Finding{ID: id, CVEs: []string{id}, Package: "agent", InstalledVersion: "0.0.0-20260917063746-c7bafb79b1a7",
+			Layer: "L2", Method: "go", Path: "/opt/komari/agent", Module: mod, ModuleVersion: modv, Component: comp,
+			Project: "https://github.com/komari-monitor/komari-agent/releases", Unit: "komari-agent.service",
+			Status: match.PotentiallyAffected, Fix: match.FixUpgrade, FixedVersion: fix, CVSS: f64(7.5)}
+		if fix == "" {
+			f.Fix = match.FixNone
+		}
+		return f
+	}
+	fs := []match.Finding{
+		mk("CVE-1", "stdlib", "1.24.0", "1.24.13", "Go 1.24.0 标准库"),
+		mk("CVE-2", "stdlib", "1.24.0", "1.25.13", "Go 1.24.0 标准库"),
+		mk("CVE-3", "golang.org/x/net", "0.38.0", "0.55.0", "依赖 golang.org/x/net 0.38.0"),
+		mk("GO-4", "golang.org/x/crypto", "0.39.0", "", "依赖 golang.org/x/crypto 0.39.0"),
+	}
+	o := system.OS{PrettyName: "Debian GNU/Linux 12 (bookworm)", Distro: "debian", Release: "12", Kind: version.Deb}
+	r := Build("v0.1.4", o, &system.Inventory{}, match.Result{}, nil, DataInfo{KeyID: "X"}, nil, false, &l2.Result{}, &l2.Outcome{Findings: fs})
+	r.FilterPackage("agent")
+	out := render(r)
+	t.Log("\n" + out)
+	for _, want := range []string{
+		"agent  未标版本号（2026-09-17 的代码）  P2 计划处理",
+		"位置  /opt/komari/agent（Go 程序，服务 komari-agent.service）",
+		"问题出在这些组件（共 4 个漏洞）",
+		"Go 标准库            1.24.0         2  用 Go 1.25.13 或更高版本编译",
+		"golang.org/x/net     0.38.0         1  0.55.0 或更高",
+		"golang.org/x/crypto  0.39.0         1  暂无修复版本",
+		"1. 到项目发布页下载最新版本：https://github.com/komari-monitor/komari-agent/releases",
+		"3. sudo systemctl restart komari-agent.service",
+		"4. secwatch scan --pkg agent",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Count(out, "\n") > 30 {
+		t.Error("the program view should stay short")
+	}
+}

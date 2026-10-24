@@ -68,8 +68,11 @@ type Finding struct {
 	// Go programs: the affected module, and for anything but the program's
 	// own module a label such as "依赖 golang.org/x/net 0.15.0" or
 	// "Go 1.21.5 标准库" (reachability is not checked, so potentially affected).
-	Module    string `json:"module,omitempty"`
-	Component string `json:"component,omitempty"`
+	Module        string `json:"module,omitempty"`
+	ModuleVersion string `json:"module_version,omitempty"`
+	Component     string `json:"component,omitempty"`
+	Project       string `json:"project,omitempty"` // release page of a Go program
+	Unit          string `json:"unit,omitempty"`    // systemd service running it
 	// Minor: the distro rates this negligible (Debian "unimportant").
 	Minor bool `json:"minor,omitempty"`
 }

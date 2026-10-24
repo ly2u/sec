@@ -135,3 +135,33 @@ func TestProcessesFindsOwnExecutable(t *testing.T) {
 	}
 	t.Error("the test process itself must be listed")
 }
+
+func TestProjectAndUnit(t *testing.T) {
+	for core, want := range map[string]string{
+		"github.com/komari-monitor/komari-agent": "https://github.com/komari-monitor/komari-agent/releases",
+		"github.com/caddyserver/caddy/v2":        "https://github.com/caddyserver/caddy/releases",
+		"gitlab.com/group/tool/cmd/x":            "https://gitlab.com/group/tool/-/releases",
+		"example.com/private/thing":              "",
+		"github.com/x/..":                        "",
+		"github.com/bad;owner/repo":              "",
+	} {
+		if got := (Program{Core: Module{Path: core}}).Project(); got != want {
+			t.Errorf("Project(%s) = %q, want %q", core, got, want)
+		}
+	}
+	dir := t.TempDir()
+	for name, cg := range map[string]string{
+		"1": "0::/system.slice/komari-agent.service\n",
+		"2": "0::/user.slice/user-0.slice/session-3.scope\n",
+		"3": "0::/system.slice/system-getty.slice/getty@tty1.service\n",
+		"4": "0::/system.slice/evil;rm.service\n",
+	} {
+		os.MkdirAll(filepath.Join(dir, name), 0o755)
+		os.WriteFile(filepath.Join(dir, name, "cgroup"), []byte(cg), 0o644)
+	}
+	for pid, want := range map[string]string{"1": "komari-agent.service", "2": "", "3": "getty@tty1.service", "4": ""} {
+		if got := unitOf(filepath.Join(dir, pid)); got != want {
+			t.Errorf("unitOf(%s) = %q, want %q", pid, got, want)
+		}
+	}
+}

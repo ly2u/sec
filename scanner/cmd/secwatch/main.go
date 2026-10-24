@@ -227,7 +227,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		thirdNames = append(thirdNames, p.Name)
 	}
 	cands = append(cands, gobin.Files(host, gobin.DebFiles(host, thirdNames))...)
-	progs := skipCovered(gobin.Collect(cands, ownerFn(owners, inv)), found)
+	progs := skipSelf(skipCovered(gobin.Collect(cands, ownerFn(owners, inv)), found))
 	if len(progs) > 0 {
 		goData, gerr := fetch("golang", "1")
 		if gerr != nil {
@@ -544,4 +544,24 @@ func newerRelease(current, latest string) string {
 		return ""
 	}
 	return latest
+}
+
+// skipSelf drops secwatch's own binary: it is kept current through the update
+// hint, and its build is checked in CI (govulncheck), not on users' hosts.
+func skipSelf(progs []gobin.Program) []gobin.Program {
+	self, err := os.Executable()
+	if err != nil {
+		return progs
+	}
+	real, err := filepath.EvalSymlinks(self)
+	if err != nil {
+		real = self
+	}
+	var out []gobin.Program
+	for _, p := range progs {
+		if p.Path != self && p.Path != real {
+			out = append(out, p)
+		}
+	}
+	return out
 }

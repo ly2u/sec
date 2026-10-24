@@ -95,11 +95,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          files=(dist/secwatch-linux-amd64 dist/secwatch-linux-arm64 dist/install.sh
+                 dist/secwatch-release.pub dist/SHA256SUMS dist/SHA256SUMS.minisig)
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            # A release made by hand on the website for this tag: add the files to it.
+            # Existing files with the same names are never replaced.
+            gh release upload "$VERSION" "${files[@]}"
+            exit 0
+          fi
           pre=()
           [[ "$VERSION" == *-* ]] && pre=(--prerelease)
           target=()
           [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && target=(--target "$GITHUB_SHA") || target=(--verify-tag)
           gh release create "$VERSION" "${target[@]}" --generate-notes \
-            --title "SecWatch $VERSION" "${pre[@]}" \
-            dist/secwatch-linux-amd64 dist/secwatch-linux-arm64 dist/install.sh \
-            dist/secwatch-release.pub dist/SHA256SUMS dist/SHA256SUMS.minisig
+            --title "SecWatch $VERSION" "${pre[@]}" "${files[@]}"

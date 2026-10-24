@@ -52,7 +52,11 @@ class KEVAdapter:
         feed = self.http.json(KEV_URL)
         if feed["count"] != len(feed["vulnerabilities"]):
             raise ValueError("KEV catalog count mismatch")
-        revision = str(feed["catalogVersion"])
+        catalog = str(feed["catalogVersion"])
+        # CISA has republished a changed catalog under the same catalogVersion
+        # (2026.10.23 gained CVE-2026-110447 hours after first release). The
+        # ingest revision therefore follows the content, not the label.
+        revision = f"{catalog}#{digest(feed['vulnerabilities'])[:16]}"
 
         def records():
             for row in feed["vulnerabilities"]:
@@ -69,7 +73,7 @@ class KEVAdapter:
                     "required_action": row["requiredAction"],
                     "ransomware": row.get("knownRansomwareCampaignUse", "Unknown"),
                     "notes": row.get("notes", ""),
-                    "catalog_version": revision,
+                    "catalog_version": catalog,
                     "record_hash": digest(row),
                     "is_active": True,
                     "removed_at": None,
@@ -93,7 +97,7 @@ class KEVAdapter:
                     revision,
                     "kev",
                     now,
-                    {"catalog_version": revision, "source_url": KEV_URL},
+                    {"catalog_version": catalog, "source_url": KEV_URL},
                     "P2",
                 )
 

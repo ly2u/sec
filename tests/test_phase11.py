@@ -61,6 +61,23 @@ def test_first_full_kev_is_baseline_then_only_new_entry_is_live(db):
         assert state.has_completed and not state.cursor["is_baseline"]
 
 
+def test_kev_republished_under_same_version_is_not_skipped(db):
+    """CISA republished catalog 2026.10.23 with an extra entry and the same
+    catalogVersion; the second copy must still be ingested."""
+    feed = kev_feed(2, revision="2026.10.23")
+    adapter = KEVAdapter(mock_http(lambda _: httpx.Response(200, json=feed)))
+    assert adapter.run(db, limit=None)["completed"]
+    feed = kev_feed(3, revision="2026.10.23")
+    assert adapter.run(db, limit=None)["completed"]
+    with Session(db) as session:
+        assert session.scalar(select(func.count()).select_from(KEVEntry)) == 3
+        assert session.get(KEVEntry, "CVE-2020-10002").catalog_version == "2026.10.23"
+    assert event_counts(db) == (2, 1)  # the late addition is a live (public) event
+    # Unchanged content is still recognised as unchanged.
+    assert adapter.run(db, limit=None)["completed"]
+    assert event_counts(db) == (2, 1)
+
+
 def test_kev_revision_change_restarts_incomplete_first_snapshot(db, caplog):
     feed = kev_feed(3)
     adapter = KEVAdapter(mock_http(lambda _: httpx.Response(200, json=feed)))

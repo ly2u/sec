@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from apps.server.models import (
     AffectedPackage,
@@ -144,7 +144,19 @@ def _facts(session, ids):
     out = {i: {"vuln": None, "kev": None, "epss": None} for i in ids}
     for start in range(0, len(ids), 1000):
         chunk = ids[start : start + 1000]
-        for vuln in session.scalars(select(Vulnerability).where(Vulnerability.id.in_(chunk))):
+        # Lists need a few columns only; never load raw_record (the full CVE JSON) here.
+        columns = load_only(
+            Vulnerability.id,
+            Vulnerability.title,
+            Vulnerability.description,
+            Vulnerability.published_at,
+            Vulnerability.cvss,
+            Vulnerability.cvss_version,
+            Vulnerability.cvss_metrics,
+            Vulnerability.severity,
+        )
+        query = select(Vulnerability).options(columns).where(Vulnerability.id.in_(chunk))
+        for vuln in session.scalars(query):
             out[vuln.id]["vuln"] = vuln
         for kev in session.scalars(
             select(KEVEntry).where(KEVEntry.vulnerability_id.in_(chunk), KEVEntry.is_active)

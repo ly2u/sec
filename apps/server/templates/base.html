@@ -5,26 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}LY2U SecWatch{% endblock %}</title>
 <meta name="description" content="{% block description %}面向 VPS 和自建服务器的漏洞情报与只读自检工具{% endblock %}">
+<meta name="theme-color" content="#10213a">
 <link rel="stylesheet" href="/static/site.css?v={{ css_version() }}">
 <link rel="alternate" type="application/rss+xml" title="LY2U SecWatch" href="/rss.xml">
-{% block head %}{% endblock %}
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="/">LY2U <span>SecWatch</span></a>
+<header class="band">
+  <div class="wrap top">
+    <a class="brand" href="/"><i class="brand-mark" aria-hidden="true"></i>LY2U <span>SecWatch</span></a>
+    {% set here = request.url.path %}
     <nav class="nav" aria-label="主导航">
-      <a href="/products">产品</a>
-      <a href="/scanner">扫描器</a>
-      <a href="/about">关于</a>
+      <a href="/kev"{% if here.startswith('/kev') %} aria-current="page"{% endif %}>在野利用</a>
+      <a href="/products"{% if here.startswith('/product') %} aria-current="page"{% endif %}>软件</a>
+      <a href="/scanner"{% if here == '/scanner' %} aria-current="page"{% endif %}>扫描器</a>
+      <a href="/about"{% if here == '/about' %} aria-current="page"{% endif %}>关于</a>
     </nav>
     {% block lookup %}
-    <form class="lookup-mini" action="/go" method="get" role="search">
-      <input id="q-top" type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号">
+    <form class="lookup lookup-top" action="/go" method="get" role="search">
+      <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号">
       <button type="submit">查看</button>
     </form>
     {% endblock %}
   </div>
+  {% block band %}{% endblock %}
 </header>
 <main>
   <div class="wrap">
@@ -33,6 +36,7 @@
 </main>
 <footer>
   <div class="wrap">
+    {% if freshness %}<span class="fresh">数据更新：{% for f in freshness %}{{ f.source }} {{ f.last_success|when }}{% if not loop.last %}；{% endif %}{% endfor %}</span>{% endif %}
     <span>数据来自 CVE Program、CISA KEV、FIRST EPSS、OSV、Node.js Security WG</span>
     <a href="/about">数据来源与许可</a>
     <a href="/privacy">隐私</a>

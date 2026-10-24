@@ -369,12 +369,40 @@ def vulnerability_page(session, vid):
         else None,
         "epss_date": facts["epss"].score_date.isoformat() if facts["epss"] else None,
         "priority_text": PRIORITY_TEXT[row["priority"]],
-        "distros": _distro_matrix(session, vid),
-        "upstream": _upstream_for(session, vid),
+        "distros": (distros := _distro_matrix(session, vid)),
+        "upstream": (upstream := _upstream_for(session, vid)),
+        "guidance": _guidance(distros, upstream),
         "timeline": _timeline(session, vuln, kev),
         "aliases": [a for a in aliases if a != vid],
         "references": references,
         "cve_org": f"https://www.cve.org/CVERecord?id={vid}" if vid.startswith("CVE-") else None,
+    }
+
+
+def _guidance(distros, upstream):
+    """What to do, in one glance: distro fix coverage and upstream fixed versions."""
+    fixed, unfixed, minor = [], [], 0
+    for group in distros:
+        label = f"{group['distro']} {group['release']}".strip()
+        pending = [p for p in group["packages"] if p["status"] != "fixed"]
+        if not pending:
+            fixed.append(label)
+            continue
+        unfixed.append(label)
+        if all(p["minor"] for p in pending):
+            minor += 1  # the distro rates every open item as unimportant
+    versions = []
+    for item in upstream:
+        for rng in item["ranges"]:
+            if rng.get("fixed") and rng["fixed"] not in versions:
+                versions.append(rng["fixed"])
+    return {
+        "distro_fixed": fixed,
+        "distro_unfixed": unfixed,
+        "distro_minor": minor,
+        "upstream_fixed": versions[:8],
+        "upstream_names": sorted({u["name"] for u in upstream}),
+        "upstream_unfixed": bool(upstream) and not versions,
     }
 
 
@@ -576,3 +604,61 @@ def freshness(session):
             found[label] = when
     order = [*names.values(), "发行版安全公告（OSV）"]
     return [{"source": k, "last_success": found[k]} for k in order if k in found]
+
+
+def risk_breakdown(session, days=30):
+    """Newly published CVEs in the window, counted by site priority."""
+    since = datetime.now(UTC) - timedelta(days=days)
+    rows = session.execute(
+        select(
+            Vulnerability.severity,
+            Vulnerability.cvss,
+            Vulnerability.cvss_version,
+            KEVEntry.vulnerability_id,
+            EPSSScore.epss,
+        )
+        .outerjoin(
+            KEVEntry,
+            (KEVEntry.vulnerability_id == Vulnerability.id) & KEVEntry.is_active,
+        )
+        .outerjoin(EPSSScore, EPSSScore.vulnerability_id == Vulnerability.id)
+        .where(Vulnerability.status == "PUBLISHED", Vulnerability.published_at >= since)
+    ).all()
+    counts = {"P0": 0, "P1": 0, "P2": 0, "P3": 0}
+    for severity, cvss, version, kev, epss in rows:
+        score3 = cvss if version in ("3.0", "3.1") else None
+        counts[
+            priority(kev is not None, float(epss) if epss is not None else None, score3, severity)
+        ] += 1
+    total = sum(counts.values())
+    return {
+        "days": days,
+        "total": total,
+        "segments": [
+            {"level": level, "count": n, "share": (n / total * 100) if total else 0}
+            for level, n in counts.items()
+        ],
+    }
+
+
+def kev_list(session, page=1):
+    total = (
+        session.scalar(select(func.count()).select_from(KEVEntry).where(KEVEntry.is_active)) or 0
+    )
+    pages = max(1, -(-total // PAGE_SIZE))
+    page = min(max(1, page), pages, MAX_PAGE)
+    entries = session.scalars(
+        select(KEVEntry)
+        .where(KEVEntry.is_active)
+        .order_by(KEVEntry.date_added.desc(), KEVEntry.vulnerability_id.desc())
+        .offset((page - 1) * PAGE_SIZE)
+        .limit(PAGE_SIZE)
+    ).all()
+    facts = _facts(session, [e.vulnerability_id for e in entries])
+    items = []
+    for e in entries:
+        row = summary(e.vulnerability_id, facts[e.vulnerability_id])
+        row["kev_name"] = e.name
+        row["vendor_product"] = f"{e.vendor} {e.product}"
+        items.append(row)
+    return {"rows": items, "page": page, "pages": pages, "total": total}

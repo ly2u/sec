@@ -13,13 +13,13 @@
     <th>优先级</th><th>编号</th>
     {% if show_title %}<th class="hide-sm">概要</th>{% endif %}
     {% if show_ranges %}<th>受影响版本</th>{% endif %}
-    <th class="num">CVSS</th><th class="num">EPSS</th><th class="num hide-sm">公开日期</th>
+    <th class="num">CVSS</th><th class="num">EPSS</th><th class="num hide-sm">公开</th>
   </tr></thead>
   <tbody>
   {% for v in rows %}
   <tr>
     <td>{{ pri(v.priority) }}</td>
-    <td><a class="id" href="/cve/{{ v.id|urlencode }}">{{ v.id }}</a>{% if v.kev %} <span class="flag kev" title="CISA KEV：已确认在野利用">KEV</span>{% endif %}</td>
+    <td class="nowrap"><a class="id" href="/cve/{{ v.id|urlencode }}">{{ v.id }}</a>{% if v.kev %} <span class="chip kev">在野利用</span>{% endif %}</td>
     {% if show_title %}<td class="hide-sm">{{ v.title or "—" }}</td>{% endif %}
     {% if show_ranges %}<td class="ver small">{% for r in v.ranges %}{{ r.text }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% if v.more_ranges %}<br><span class="muted">另有 {{ v.more_ranges }} 个范围</span>{% endif %}</td>{% endif %}
     <td class="num">{{ score(v) }}</td>
@@ -30,4 +30,34 @@
   </tbody>
 </table>
 </div>
+{%- endmacro %}
+
+{% macro alert_list(rows) -%}
+<ul class="alerts">
+{% for v in rows %}
+  <li>
+    <span class="bar" aria-hidden="true"></span>
+    <div class="what">
+      <a class="id" href="/cve/{{ v.id|urlencode }}">{{ v.id }}</a>
+      {% if v.ransomware %}<span class="chip kev">勒索软件利用</span>{% endif %}
+      <p class="t">{{ v.kev_name or v.title }}</p>
+      <span class="v">{{ v.vendor_product }}</span>
+    </div>
+    <div class="meta">
+      <span class="score">{% if v.cvss is not none %}{{ "%.1f"|format(v.cvss) }}{% else %}—{% endif %}</span>
+      {{ v.kev_added }} 加入
+    </div>
+  </li>
+{% endfor %}
+</ul>
+{%- endmacro %}
+
+{% macro pager(p, base="") -%}
+{% if p.pages > 1 %}
+<nav class="pager" aria-label="翻页">
+  {% if p.page > 1 %}<a href="{{ base }}?page={{ p.page - 1 }}">上一页</a>{% endif %}
+  <span class="muted small">第 {{ p.page }} / {{ p.pages }} 页</span>
+  {% if p.page < p.pages %}<a href="{{ base }}?page={{ p.page + 1 }}">下一页</a>{% endif %}
+</nav>
+{% endif %}
 {%- endmacro %}

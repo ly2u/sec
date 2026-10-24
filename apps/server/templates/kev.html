@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% from "_macros.html" import alert_list, pager %}
+{% block title %}已确认被在野利用的漏洞 - LY2U SecWatch{% endblock %}
+{% block description %}CISA KEV 目录：已被确认实际利用的漏洞，按加入时间排列。{% endblock %}
+{% block main %}
+<div class="page-title">
+  <h1>已确认被在野利用</h1>
+  <p>CISA 已知被利用漏洞目录（KEV）共 {{ "{:,}".format(k.total) }} 条，按加入时间从新到旧排列。这些漏洞已经被真实攻击使用，应最先处理。</p>
+</div>
+<section class="panel">
+  {{ alert_list(k.rows) }}
+  {{ pager(k) }}
+</section>
+{% endblock %}

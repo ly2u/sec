@@ -200,6 +200,7 @@ PAGES = [
     "/about",
     "/privacy",
     "/security",
+    "/kev",
 ]
 
 
@@ -328,3 +329,20 @@ def test_head_requests_return_headers_without_body(client):
         assert head.headers["content-type"] == get.headers["content-type"]
     assert client.head("/cve/CVE-2030-12345").status_code == 404
     assert client.post("/").status_code == 405
+
+
+def test_home_risk_meter_and_kev_list(client):
+    html = client.get("/").text
+    assert "近 30 天新公开" in html and "w-" in html  # CSP-safe width classes, no inline style
+    assert 'style="' not in html
+    kev = client.get("/kev").text
+    assert "CVE-2024-4577" in kev and "共 1 条" in kev
+    assert client.get("/kev?page=9999").status_code == 422
+
+
+def test_cve_page_says_what_to_do(client):
+    html = client.get("/cve/CVE-2024-4577").text
+    assert "怎么处理" in html
+    assert "Debian 12 已发布修复" in html and "Ubuntu 24.04 还没有修复版本" in html
+    assert "8.1.29" in html  # upstream fixed version
+    assert 'style="' not in html

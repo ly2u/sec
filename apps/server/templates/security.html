@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}报告安全问题 - LY2U SecWatch{% endblock %}
 {% block main %}
-<div class="prose">
+<section class="panel prose">
 <h1>报告安全问题</h1>
 <p>如果你发现本站、扫描器或数据包签名流程中的安全问题，请<strong>不要</strong>在公开的 Issue 中报告。</p>
 <p>请通过 GitHub 的私密漏洞报告提交：<a href="https://github.com/ly2u/sec/security/advisories/new">github.com/ly2u/sec/security/advisories/new</a>。</p>
@@ -13,5 +13,5 @@
   <li>发布包：<a href="/keys/release-signing.pub">release-signing.pub</a></li>
   <li>数据包：<a href="/keys/bundle-signing.pub">bundle-signing.pub</a>（内置在扫描器中）</li>
 </ul>
-</div>
+</section>
 {% endblock %}

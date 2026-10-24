@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}隐私 - LY2U SecWatch{% endblock %}
 {% block main %}
-<div class="prose">
+<section class="panel prose">
 <h1>隐私</h1>
 <h2>扫描器</h2>
 <p>扫描器不上传任何数据。它只向 <code>sec.ly2u.com</code> 请求公开的漏洞数据包（与任何访客下载的内容相同），请求中不包含你的软件清单、主机名或其他系统信息。所有比对都在你的机器上完成。可以用 <code>--offline</code> 完全断网运行来确认这一点。</p>
@@ -9,5 +9,5 @@
 <p>本站不使用 Cookie，不加载任何第三方脚本、字体或统计服务，页面里没有 JavaScript。</p>
 <p>本站经由 Cloudflare 提供服务，Cloudflare 会按其<a href="https://www.cloudflare.com/privacypolicy/">隐私政策</a>处理访问日志。源站服务器的反向代理会记录常规访问日志（IP 地址、时间、请求路径），只用于排查故障和防御攻击，不做其他用途。</p>
 <p>编号查询框里输入的内容只用于跳转到对应页面，不会被单独记录或分析。</p>
-</div>
+</section>
 {% endblock %}

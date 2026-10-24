@@ -3,104 +3,157 @@
 {% block title %}{{ v.id }}：{{ v.title or "漏洞详情" }} - LY2U SecWatch{% endblock %}
 {% block description %}{{ v.id }} 的评分、在野利用情况、各发行版修复状态与受影响版本。{% endblock %}
 {% block main %}
-<div class="tag {{ v.priority }}">
+{% set g = v.guidance %}
+<section class="panel summary {{ v.priority }}">
   <h1>{{ v.id }}</h1>
   <p class="verdict">{{ pri(v.priority) }} {{ v.priority_text }}</p>
+  {% if v.title_full %}<p class="title" lang="en">{{ v.title_full }}</p>{% endif %}
+  <dl class="facts">
+    <div><dt>CVSS 评分</dt><dd>{% if v.cvss is not none %}{{ "%.1f"|format(v.cvss) }}<small>v{{ v.cvss_version }}{% if v.severity %} {{ v.severity|lower }}{% endif %}</small>{% else %}—{% endif %}</dd></div>
+    <div><dt>30 天内被利用概率</dt><dd>{{ v.epss|pct }}{% if v.epss_percentile is not none %}<small>高于 {{ v.epss_percentile|pct }}</small>{% endif %}</dd></div>
+    <div><dt>在野利用</dt><dd{% if v.kev %} class="hot"{% endif %}>{% if v.kev %}已确认<small>{{ v.kev_added }}</small>{% else %}未列入{% endif %}</dd></div>
+    <div><dt>公开日期</dt><dd>{{ v.published or "—" }}</dd></div>
+  </dl>
+  {% if v.status == "REJECTED" %}
+  <div class="callout note"><strong>这个 CVE 已被撤销</strong>，不代表真实漏洞。{% if v.description %}<p lang="en">{{ v.description }}</p>{% endif %}</div>
+  {% elif v.status != "PUBLISHED" %}
+  <div class="callout note">CVE 记录尚未公开或未收录，下面只列出其他来源的信息。</div>
+  {% endif %}
+  {% if v.kev_detail %}
+  <div class="callout">
+    <strong>CISA 已确认这个漏洞被实际利用</strong>{% if v.kev_detail.ransomware|lower == "known" %}，并且已知被勒索软件利用{% endif %}。
+    <p class="small" lang="en">CISA 要求：{{ v.kev_detail.action }}</p>
+  </div>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  <div>
+    <section class="panel">
+      <div class="panel-head"><h2>怎么处理</h2></div>
+      <ul class="todo">
+        {% if v.distros %}
+        <li>
+          <span class="ico {{ 'ok' if not g.distro_unfixed else 'warn' }}">{{ '✓' if not g.distro_unfixed else '!' }}</span>
+          <div>
+            <strong>系统软件包（apt / dnf / apk 安装的）</strong>
+            {% if g.distro_fixed %}<p>{{ g.distro_fixed|join('、') }} 已发布修复，正常升级系统即可。</p>{% endif %}
+            {% if g.distro_unfixed %}<p>{{ g.distro_unfixed|join('、') }} 还没有修复版本{% if g.distro_minor %}（其中 {{ g.distro_minor }} 个被发行版评为影响轻微）{% endif %}，关注后续更新。</p>{% endif %}
+          </div>
+        </li>
+        {% endif %}
+        {% if v.upstream %}
+        <li>
+          <span class="ico {{ 'warn' if g.upstream_unfixed else 'info' }}">{{ '!' if g.upstream_unfixed else '↑' }}</span>
+          <div>
+            <strong>宝塔、源码编译、官方二进制安装的 {{ g.upstream_names|join('、') }}</strong>
+            {% if g.upstream_fixed %}<p>按你使用的版本分支，升级到 <span class="ver">{{ g.upstream_fixed|join('、') }}</span> 或更高版本。</p>
+            {% else %}<p>上游暂无修复版本，见下方受影响版本。</p>{% endif %}
+          </div>
+        </li>
+        {% endif %}
+        <li>
+          <span class="ico info">?</span>
+          <div>
+            <strong>不确定自己的机器是否受影响</strong>
+            <p>在服务器上运行 <code>sudo secwatch scan</code>，会结合你实际安装的版本和对外开放的服务给出结论。<a href="/scanner">安装扫描器</a></p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    {% if v.distros %}
+    <section class="panel">
+      <div class="panel-head"><h2>各发行版修复状态</h2></div>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>发行版</th><th>软件包</th><th>状态</th><th>修复版本</th></tr></thead>
+        <tbody>
+        {% for d in v.distros %}{% for p in d.packages %}
+        <tr>
+          <td class="nowrap">{% if loop.first %}{{ d.distro }} {{ d.release }}{% endif %}</td>
+          <td class="ver">{{ p.package }}</td>
+          <td class="nowrap">
+            {% if p.status == "fixed" %}<span class="chip ok">已修复</span>
+            {% elif p.status == "unfixed" %}<span class="chip warn">未修复</span>
+            {% else %}<span class="chip">{{ p.status_text }}</span>{% endif %}
+            {% if p.minor %}<span class="muted small">影响轻微</span>{% endif %}
+            {% if p.subscription %}<span class="muted small">需 Ubuntu Pro</span>{% endif %}
+          </td>
+          <td class="ver">{% if p.fixed %}<a href="{{ p.url }}" rel="nofollow noopener">{{ p.fixed }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+        </tr>
+        {% endfor %}{% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <p class="small muted note-below">没有列出的发行版版本，表示该发行版没有发布这条记录：可能不受影响，也可能尚未评估。</p>
+    </section>
+    {% endif %}
+
+    {% if v.upstream %}
+    <section class="panel">
+      <div class="panel-head"><h2>受影响的上游版本</h2><span class="sub">适用于不经软件包安装的程序</span></div>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>软件</th><th>受影响版本</th><th>来源</th></tr></thead>
+        <tbody>
+        {% for u in v.upstream %}
+        <tr>
+          <td class="nowrap"><a href="/product/{{ u.slug }}">{{ u.name }}</a></td>
+          <td class="ver small">{% for r in u.ranges %}{{ r.text }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+          <td class="small"><a href="{{ u.ref }}" rel="nofollow noopener">{{ u.source }}</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </section>
+    {% endif %}
+
+    {% if v.description and v.status != "REJECTED" %}
+    <section class="panel">
+      <div class="panel-head"><h2>漏洞描述</h2><span class="sub">英文原文，来自 CVE 记录</span></div>
+      <p class="desc" lang="en">{{ v.description }}</p>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="side">
+    {% if v.timeline %}
+    <section class="panel">
+      <h2>时间线</h2>
+      <ol class="tl">
+      {% for t in v.timeline %}<li><time>{{ t.date }}</time><span>{{ t.text }}</span></li>{% endfor %}
+      </ol>
+    </section>
+    {% endif %}
+    <section class="panel">
+      {% if v.cwes or v.ssvc or v.cvss_vector %}
+      <details>
+        <summary>技术细节</summary>
+        <ul class="refs">
+          {% if v.cvss_vector %}<li>CVSS 向量 <code>{{ v.cvss_vector }}</code>{% if v.cvss_source %} <span class="muted">（{{ v.cvss_source }}）</span>{% endif %}</li>{% endif %}
+          {% for c in v.cwes %}<li>弱点类型 {{ c }}</li>{% endfor %}
+          {% if v.ssvc %}<li>CISA SSVC：{% for k, val in v.ssvc.items() %}{{ k }} = {{ val }}{% if not loop.last %}；{% endif %}{% endfor %}</li>{% endif %}
+        </ul>
+      </details>
+      {% endif %}
+      {% if v.aliases %}
+      <details>
+        <summary>其他编号（{{ v.aliases|length }}）</summary>
+        <p class="ver small">{{ v.aliases|join('，') }}</p>
+      </details>
+      {% endif %}
+      {% if v.references %}
+      <details>
+        <summary>参考链接（{{ v.references|length }}）</summary>
+        <ul class="refs">
+        {% for r in v.references %}<li><a href="{{ r.url }}" rel="nofollow noopener">{{ r.url }}</a></li>{% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+      <p class="small muted note-below">来源：{% if v.cve_org %}<a href="{{ v.cve_org }}" rel="nofollow noopener">CVE 记录</a>、{% endif %}CISA KEV、FIRST EPSS、OSV。以原始来源为准。</p>
+    </section>
+  </aside>
 </div>
-
-{% if v.status == "REJECTED" %}
-<div class="callout">这个 CVE 已被撤销（REJECTED），不代表真实漏洞。{% if v.description %}原因：{{ v.description }}{% endif %}</div>
-{% elif v.status != "PUBLISHED" %}
-<div class="callout">CVE 记录尚未公开或未收录，下面只列出其他来源的信息。</div>
-{% endif %}
-
-{% if v.title_full %}<p class="title"><strong>{{ v.title_full }}</strong></p>{% endif %}
-{% if v.description and v.status != "REJECTED" %}<p class="desc" lang="en">{{ v.description }}</p>{% endif %}
-
-<dl class="facts">
-  <div><dt>CVSS</dt><dd>{% if v.cvss is not none %}{{ "%.1f"|format(v.cvss) }} <small>v{{ v.cvss_version }}{% if v.severity %}，{{ v.severity }}{% endif %}</small>{% else %}—{% endif %}</dd></div>
-  <div><dt>EPSS（30 天内被利用的概率）</dt><dd>{{ v.epss|pct }}{% if v.epss_percentile is not none %} <small>高于 {{ v.epss_percentile|pct }} 的漏洞</small>{% endif %}</dd></div>
-  <div><dt>在野利用（CISA KEV）</dt><dd>{% if v.kev %}是 <small>{{ v.kev_added }} 起</small>{% else %}未列入{% endif %}</dd></div>
-  <div><dt>公开日期</dt><dd>{{ v.published or "—" }}</dd></div>
-</dl>
-
-{% if v.kev_detail %}
-<div class="callout">
-  <p><strong>CISA 已确认该漏洞被实际利用</strong>（{{ v.kev_detail.name }}）。{% if v.kev_detail.ransomware|lower == "known" %}已知被勒索软件利用。{% endif %}</p>
-  <p class="small" lang="en">CISA 要求的处置：{{ v.kev_detail.action }}</p>
-</div>
-{% endif %}
-
-<p class="small muted">优先级只按漏洞本身判断。你的机器是否受影响、服务是否暴露在公网，需要在服务器上<a href="/scanner">运行扫描器</a>确认。</p>
-
-<h2>各发行版修复状态</h2>
-{% if v.distros %}
-<div class="tablewrap">
-<table>
-  <thead><tr><th>发行版</th><th>软件包</th><th>状态</th><th>修复版本</th></tr></thead>
-  <tbody>
-  {% for d in v.distros %}{% for p in d.packages %}
-  <tr>
-    <td class="nowrap">{% if loop.first %}{{ d.distro }} {{ d.release }}{% endif %}</td>
-    <td class="ver">{{ p.package }}</td>
-    <td class="status-{{ p.status }}">{{ p.status_text }}{% if p.minor %} <span class="muted small">（发行版评为影响轻微）</span>{% endif %}{% if p.subscription %} <span class="muted small">（需 Ubuntu Pro）</span>{% endif %}</td>
-    <td class="ver">{% if p.fixed %}<a href="{{ p.url }}" rel="nofollow noopener">{{ p.fixed }}</a>{% else %}—{% endif %}</td>
-  </tr>
-  {% endfor %}{% endfor %}
-  </tbody>
-</table>
-</div>
-<p class="small muted">表中没有出现的发行版版本，表示该发行版没有发布这条记录：可能不受影响，也可能尚未评估。</p>
-{% else %}
-<p class="muted">没有发行版发布这条漏洞的记录。</p>
-{% endif %}
-
-{% if v.upstream %}
-<h2>受影响的上游版本</h2>
-<p class="small muted">适用于不经发行版软件包安装的程序，例如宝塔、源码编译、官方二进制。发行版的软件包请以上表为准，因为发行版会把补丁移植到旧版本号里。</p>
-<div class="tablewrap">
-<table>
-  <thead><tr><th>产品</th><th>受影响版本</th><th>来源</th></tr></thead>
-  <tbody>
-  {% for u in v.upstream %}
-  <tr>
-    <td><a href="/product/{{ u.slug }}">{{ u.name }}</a></td>
-    <td class="ver small">{% for r in u.ranges %}{{ r.text }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
-    <td class="small"><a href="{{ u.ref }}" rel="nofollow noopener">{{ u.source }}</a></td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endif %}
-
-{% if v.timeline %}
-<h2>时间线</h2>
-<ol class="timeline">
-{% for t in v.timeline %}<li><time>{{ t.date }}</time><span>{{ t.text }} <span class="muted small">{{ t.source }}</span></span></li>{% endfor %}
-</ol>
-{% endif %}
-
-{% if v.cwes or v.ssvc or v.cvss_vector %}
-<h2>技术细节</h2>
-<ul class="plain small">
-  {% if v.cvss_vector %}<li>CVSS 向量：<code>{{ v.cvss_vector }}</code>{% if v.cvss_source %} <span class="muted">（{{ v.cvss_source }}）</span>{% endif %}</li>{% endif %}
-  {% for c in v.cwes %}<li>弱点类型：{{ c.id if c is mapping else c }}{% if c is mapping and c.description %} {{ c.description }}{% endif %}</li>{% endfor %}
-  {% if v.ssvc %}<li>CISA SSVC：{% for k, val in v.ssvc.items() %}{{ k }} = {{ val }}{% if not loop.last %}；{% endif %}{% endfor %}</li>{% endif %}
-</ul>
-{% endif %}
-
-{% if v.aliases %}
-<h2>其他编号</h2>
-<p class="ver small">{% for a in v.aliases %}{{ a }}{% if not loop.last %}，{% endif %}{% endfor %}</p>
-{% endif %}
-
-{% if v.references %}
-<h2>参考链接</h2>
-<ul class="refs">
-{% for r in v.references %}<li><a href="{{ r.url }}" rel="nofollow noopener">{{ r.url }}</a></li>{% endfor %}
-</ul>
-{% endif %}
-
-<p class="small muted">来源：{% if v.cve_org %}<a href="{{ v.cve_org }}" rel="nofollow noopener">CVE 记录</a>，{% endif %}CISA KEV，FIRST EPSS，OSV。数据可能有延迟，以原始来源为准。</p>
 {% endblock %}

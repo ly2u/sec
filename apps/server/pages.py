@@ -74,13 +74,20 @@ def home(request: Request, session: DB):
         request,
         "home.html",
         {
-            "kev": site.recent_kev(session),
-            "events": site.recent_events(session, limit=12),
+            "kev": site.recent_kev(session, limit=8),
+            "kev_total": site.kev_list(session, 1)["total"],
+            "risk": site.risk_breakdown(session),
+            "events": site.recent_events(session, limit=10),
             "products": site.products(),
             "counts": site.product_counts(session),
             "freshness": site.freshness(session),
         },
     )
+
+
+@router.get("/kev", response_class=HTMLResponse)
+def kev(request: Request, session: DB, page: int = Query(1, ge=1, le=site.MAX_PAGE)):
+    return render(request, "kev.html", {"k": site.kev_list(session, page)})
 
 
 @router.get("/go")

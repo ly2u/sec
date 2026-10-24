@@ -1,64 +1,77 @@
 {% extends "base.html" %}
-{% from "_macros.html" import vuln_table, pri %}
+{% from "_macros.html" import pri, alert_list %}
 {% block lookup %}{% endblock %}
-{% block main %}
-<section class="hero">
-  <h1>你的服务器受这个漏洞影响吗？</h1>
-  <form action="/go" method="get" role="search">
-    <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号" autofocus>
-    <button type="submit">查看</button>
-  </form>
-  <p class="hint">输入 CVE、GHSA、DSA、USN 等编号，查看各发行版的修复状态和受影响的上游版本。</p>
-  <div class="check">
-    <p><strong>直接检查整台机器</strong>：扫描器只读运行，不修改系统，不上传任何数据。</p>
+{% block band %}
+<div class="wrap hero">
+  <div>
+    <h1>你的服务器受这个漏洞影响吗？</h1>
+    <p class="lead">输入漏洞编号，查看各发行版是否已修复、该升级到哪个版本。</p>
+    <form class="lookup" action="/go" method="get" role="search">
+      <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号" autofocus>
+      <button type="submit">查看</button>
+    </form>
+    <p class="hint">支持 CVE、GHSA、DSA、DLA、USN、RLSA、ALSA 等编号</p>
+  </div>
+  <div class="scan-card">
+    <h2>一条命令检查整台机器</h2>
+    <p>只读运行，不改系统、不上传数据。宝塔、源码编译的软件也能识别。</p>
 <pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh
 sudo secwatch scan</code></pre>
-    <p class="small muted">支持 Debian、Ubuntu、Rocky、Alma、Alpine，也能识别宝塔、源码编译等非包管理安装的软件。<a href="/scanner">安装说明与校验方法</a></p>
+    <p class="small"><a href="/scanner">安装说明、签名校验与支持的系统</a></p>
   </div>
+</div>
+{% if risk.total %}
+<div class="meter">
+  <div class="wrap">
+    <span class="meter-label">近 {{ risk.days }} 天新公开 <strong class="num">{{ "{:,}".format(risk.total) }}</strong> 个漏洞</span>
+    <div class="meter-bar" role="img" aria-label="按优先级分布：{% for s in risk.segments %}{{ s.level }} {{ s.count }} 个{% if not loop.last %}，{% endif %}{% endfor %}">
+      {% for s in risk.segments %}{% if s.count %}<span class="bg-{{ s.level }} w-{{ [1, s.share|round|int]|max }}"></span>{% endif %}{% endfor %}
+    </div>
+    <div class="meter-legend">
+      {% for s in risk.segments %}<span><i class="sw bg-{{ s.level }}"></i>{{ s.level }} <b>{{ "{:,}".format(s.count) }}</b></span>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block main %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>已确认被在野利用</h2>
+      <span class="sub">近 30 天 CISA KEV 新增，最需要优先处理</span>
+    </div>
+    <a href="/kev" class="small">全部 {{ kev_total }} 条</a>
+  </div>
+  {% if kev %}
+  {{ alert_list(kev) }}
+  {% else %}
+  <p class="muted">近 30 天没有新增条目。</p>
+  {% endif %}
 </section>
 
-<h2>最近 30 天新增的在野利用漏洞</h2>
-<p class="muted small">来自 CISA KEV 目录：美国网络安全局确认已被实际利用的漏洞。</p>
-{% if kev %}
-{{ vuln_table(kev) }}
-{% else %}
-<p class="muted">最近 30 天没有新增条目。</p>
-{% endif %}
-
-{% if events %}
-<h2>最新动态</h2>
-<div class="tablewrap">
-<table>
-  <thead><tr><th>时间</th><th>级别</th><th>编号</th><th>事件</th></tr></thead>
-  <tbody>
-  {% for e in events %}
-  <tr>
-    <td class="small muted">{{ e.happened_at|when }}</td>
-    <td>{{ pri(e.priority) }}</td>
-    <td><a class="id" href="/cve/{{ e.vulnerability_id|urlencode }}">{{ e.vulnerability_id }}</a></td>
-    <td>{{ e.text }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>最新动态</h2><a href="/rss.xml" class="small">RSS 订阅</a></div>
+    {% if events %}
+    <ul class="feed">
+    {% for e in events %}
+      <li>{{ pri(e.priority) }}<span><a class="id" href="/cve/{{ e.vulnerability_id|urlencode }}">{{ e.vulnerability_id }}</a> {{ e.text }}</span><time>{{ e.happened_at|when }}</time></li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">暂无新动态。新加入在野利用目录、发行版发布修复等变化会出现在这里。</p>
+    {% endif %}
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>按软件查看</h2><a href="/products" class="small">全部</a></div>
+    <ul class="prod-list">
+    {% for slug, rule in products.items() %}
+      <li><a href="/product/{{ slug }}">{{ rule.name }}</a><span class="small num"><span class="muted">{{ counts[slug].total }}</span>{% if counts[slug].kev %} <span class="pri P0">{{ counts[slug].kev }}</span>{% endif %}</span></li>
+    {% endfor %}
+    </ul>
+    <p class="small muted note-below">数字为已知漏洞数，红色为其中被在野利用的数量。</p>
+  </section>
 </div>
-{% endif %}
-
-<h2>按产品查看</h2>
-<ul class="products">
-{% for slug, rule in products.items() %}
-  <li><a href="/product/{{ slug }}">{{ rule.name }}</a><span class="muted small">{{ counts[slug].total }} 个漏洞{% if counts[slug].kev %}，{{ counts[slug].kev }} 个在野利用{% endif %}</span></li>
-{% endfor %}
-</ul>
-
-{% if freshness %}
-<h2>数据更新时间</h2>
-<div class="tablewrap">
-<table class="small">
-  <tbody>
-  {% for f in freshness %}<tr><td>{{ f.source }}</td><td class="muted">{{ f.last_success|when }}</td></tr>{% endfor %}
-  </tbody>
-</table>
-</div>
-{% endif %}
 {% endblock %}

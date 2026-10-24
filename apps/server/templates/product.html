@@ -1,57 +1,44 @@
 {% extends "base.html" %}
-{% from "_macros.html" import vuln_table %}
+{% from "_macros.html" import vuln_table, alert_list, pager %}
 {% block title %}{{ p.rule.name }} 漏洞 - LY2U SecWatch{% endblock %}
 {% block description %}{{ p.rule.name }} 的已知漏洞、在野利用记录和受影响版本。{% endblock %}
 {% block main %}
-<h1>{{ p.rule.name }}</h1>
-<p class="muted">共收录 {{ p.total }} 个漏洞{% if p.kev %}，其中 {{ p.kev|length }} 个已确认被在野利用{% endif %}。</p>
+<div class="page-title">
+  <h1>{{ p.rule.name }}</h1>
+  <p>共收录 {{ p.total }} 个漏洞{% if p.kev %}，其中 <span class="pri P0">{{ p.kev|length }}</span> 个已确认被在野利用{% endif %}。</p>
+</div>
 
-<h2>近 90 天</h2>
-{% if p.recent %}
-{{ vuln_table(p.recent, show_ranges=true) }}
-{% else %}
-<p class="muted">近 90 天没有新公开的漏洞。</p>
-{% endif %}
+<section class="panel">
+  <div class="panel-head"><h2>近 90 天</h2><span class="sub">按优先级排序</span></div>
+  {% if p.recent %}{{ vuln_table(p.recent, show_ranges=true) }}{% else %}<p class="muted">近 90 天没有新公开的漏洞。</p>{% endif %}
+</section>
 
 {% if p.kev %}
-<h2>已被在野利用</h2>
-{{ vuln_table(p.kev, show_ranges=true) }}
+<section class="panel">
+  <div class="panel-head"><h2>已被在野利用</h2></div>
+  {{ vuln_table(p.kev, show_ranges=true) }}
+</section>
 {% endif %}
 
-<h2>全部漏洞</h2>
-{% if p.history %}
-{{ vuln_table(p.history, show_ranges=true, show_title=false) }}
-{% if p.pages > 1 %}
-<nav class="pager" aria-label="翻页">
-  {% if p.page > 1 %}<a href="?page={{ p.page - 1 }}">上一页</a>{% endif %}
-  <span class="muted small">第 {{ p.page }} / {{ p.pages }} 页</span>
-  {% if p.page < p.pages %}<a href="?page={{ p.page + 1 }}">下一页</a>{% endif %}
-</nav>
-{% endif %}
-{% else %}
-<p class="muted">暂无数据。</p>
-{% endif %}
-
-<h2>扫描器如何检查 {{ p.rule.name }}</h2>
-<div class="prose">
-{% if p.detection.packages %}
-<p>通过系统软件包安装的（{% for n in p.detection.packages %}<code>{{ n }}</code>{% if not loop.last %}、{% endif %}{% endfor %}），按发行版自己的安全数据判断，发行版移植到旧版本里的补丁也算数。</p>
-{% endif %}
-{% if p.detection.places %}
-<p>不经软件包安装的，在这些位置查找程序并读取版本号：</p>
-<ul class="plain small">
-{% for pl in p.detection.places %}<li><code>{{ pl.path }}</code> <span class="muted">{{ pl.method }}</span></li>{% endfor %}
-</ul>
-{% endif %}
-{% if p.detection.processes %}
-<p>也会检查正在运行的 {% for n in p.detection.processes %}<code>{{ n }}</code>{% if not loop.last %}、{% endif %}{% endfor %} 进程对应的程序文件。只执行属于 root、其他用户不可写的程序，参数固定，不经过 shell。</p>
-{% endif %}
-{% if p.detection.bundled %}
-<p>还会读取编译时内置的组件版本：{% for b in p.detection.bundled %}{{ b }}{% if not loop.last %}、{% endif %}{% endfor %}。</p>
-{% endif %}
-{% if p.detection.sources %}
-<p class="small muted">上游版本范围取自 CVE 记录中标注为 {% for s in p.detection.sources %}“{{ s }}”{% if not loop.last %}、{% endif %}{% endfor %} 的条目{% if p.detection.notes %}。{{ p.detection.notes }}{% endif %}。</p>
-{% endif %}
-<p class="small"><a href="https://github.com/ly2u/sec/blob/main/rules/products/{{ p.slug }}.json">查看这条产品规则</a></p>
+<div class="grid-2">
+  <section class="panel">
+    <div class="panel-head"><h2>全部漏洞</h2><span class="sub">按公开时间</span></div>
+    {% if p.history %}
+    {{ vuln_table(p.history, show_ranges=true, show_title=false) }}
+    {{ pager(p) }}
+    {% else %}<p class="muted">暂无数据。</p>{% endif %}
+  </section>
+  <aside class="panel">
+    <h2>扫描器如何检查 {{ p.rule.name }}</h2>
+    <ul class="refs detect">
+    {% if p.detection.packages %}<li>系统软件包（{{ p.detection.packages|join('、') }}）按发行版自己的安全数据判断，移植到旧版本里的补丁也算数。</li>{% endif %}
+    {% if p.detection.places %}<li>不经软件包安装的，在这些位置查找程序并读取版本号：
+      <ul class="refs">{% for pl in p.detection.places %}<li><code>{{ pl.path }}</code> <span class="muted">{{ pl.method }}</span></li>{% endfor %}</ul></li>{% endif %}
+    {% if p.detection.processes %}<li>也会检查正在运行的 {{ p.detection.processes|join('、') }} 进程。只执行属于 root、其他用户不可写的程序，参数固定，不经过 shell。</li>{% endif %}
+    {% if p.detection.bundled %}<li>还会读取编译时内置的组件版本：{{ p.detection.bundled|join('、') }}。</li>{% endif %}
+    {% if p.detection.sources %}<li class="muted">上游版本范围取自 CVE 记录中标注为 {% for s in p.detection.sources %}“{{ s }}”{% if not loop.last %}、{% endif %}{% endfor %} 的条目。{{ p.detection.notes }}</li>{% endif %}
+    </ul>
+    <p class="small note-below"><a href="https://github.com/ly2u/sec/blob/main/rules/products/{{ p.slug }}.json">查看这条产品规则</a></p>
+  </aside>
 </div>
 {% endblock %}

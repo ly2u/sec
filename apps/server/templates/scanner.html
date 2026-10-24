@@ -2,7 +2,7 @@
 {% block title %}扫描器 secwatch：安装与使用 - LY2U SecWatch{% endblock %}
 {% block description %}secwatch 是只读的 Linux 漏洞自检工具：不修改系统、不上传数据，单个静态二进制，无需 Docker。{% endblock %}
 {% block main %}
-<div class="prose">
+<section class="panel prose">
 <h1>扫描器 secwatch</h1>
 <p>在服务器上运行一次，告诉你哪些软件有已知漏洞、该升级到哪个版本、先修哪个。它是单个静态二进制文件，不需要 Docker、Python 或其他依赖。</p>
 <ul class="plain">
@@ -85,5 +85,5 @@ sudo secwatch scan --format json  # 给脚本和监控用</code></pre>
 
 <h2>自建数据源</h2>
 <p>数据包是公开的静态文件，可以镜像到内网：<code>secwatch scan --bundle-url https://你的地址/bundles</code>。也可以完全离线运行：下载数据包后使用 <code>--offline --bundle 文件</code>。数据包都带有签名，扫描器只接受内置公钥（<a href="/keys/bundle-signing.pub">bundle-signing.pub</a>）签名的数据。</p>
-</div>
+</section>
 {% endblock %}

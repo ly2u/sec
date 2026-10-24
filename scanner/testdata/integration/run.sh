@@ -113,7 +113,9 @@ bundle=$("$MK" -distro debian -release 12 -package-key source -in "$dir/entries.
 file=$(basename "$bundle")
 rm -f "$bundle.minisig" "$dir/key.pub"
 minisign -G -W -p "$dir/real.pub" -s "$dir/real.key" >/dev/null
+# minisign prints the key id without leading zeros; the trusted comment uses all 16 digits.
 kid=$(head -1 "$dir/real.pub" | awk '{print $NF}')
+kid=$(printf '%16s' "$kid" | tr ' ' 0)
 minisign -S -s "$dir/real.key" -m "$bundle" -x "$bundle.minisig" -t "secwatch schema=1 key_id=$kid file=$file" >/dev/null
 set +e
 docker run --rm -v "$BIN:/usr/local/bin/secwatch:ro" -v "$dir:/data:ro" debian:12 \

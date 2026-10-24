@@ -45,13 +45,13 @@ def broadcast(engine, token=None, chat=None, client=None):
     token = token if token is not None else os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat = chat if chat is not None else os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
-        return {"skipped": "not-configured", "processed": 0}
+        return {"skipped": "not-configured", "processed": 0, "completed": True}
     with Session(engine) as session, session.begin():
         state = session.get(IngestionState, STATE)
         if state is None:
             newest = session.scalar(select(func.max(VulnerabilityEvent.id))) or 0
             session.add(IngestionState(source=STATE, cursor={"last_event_id": newest}))
-            return {"initialized": newest, "processed": 0}
+            return {"initialized": newest, "processed": 0, "completed": True}
         last = int((state.cursor or {}).get("last_event_id", 0))
         events = [
             SimpleNamespace(
@@ -104,4 +104,5 @@ def broadcast(engine, token=None, chat=None, client=None):
     with Session(engine) as session, session.begin():
         state = session.get(IngestionState, STATE)
         state.cursor = {"last_event_id": last}
-    return {"processed": sent, "pending": len(events) - sent}
+    # Unsent events stay pending; reporting incomplete lets the scheduler retry.
+    return {"processed": sent, "pending": len(events) - sent, "completed": sent == len(events)}

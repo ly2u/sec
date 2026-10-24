@@ -26,6 +26,7 @@ from apps.server.models import (
     Vulnerability,
 )
 from collector.distros import PACKAGE_KEYS, PACKAGE_NAME, RELEASES, VERSION
+from collector.release import latest as latest_release
 
 FILENAME = re.compile(
     r"(?:debian|ubuntu|rocky|alma|alpine|upstream|golang)-[\d.]+\.[a-f0-9]{12}\.json\.zst(?:\.minisig)?"
@@ -468,8 +469,11 @@ def generate(
         sources = {
             r.source: r.source_revision
             for r in source_states
-            if r.completed and not r.source.startswith("cve:baseline")
+            if r.completed and not r.source.startswith(("cve:baseline", "scanner:"))
         }
+        # Not part of any bundle: a new release must not rebuild the bundles.
+        tag = latest_release(session)
+        scanner = {"latest": tag} if tag else None
         # "upstream-1" carries layer-L2 product ranges; "golang-1" the Go
         # vulnerability database for Go-compiled programs. Schema version 1.
         for distro, releases in [*RELEASES.items(), ("upstream", ["1"]), ("golang", ["1"])]:
@@ -541,7 +545,12 @@ def generate(
                     "coverage": coverage,
                 }
                 updated.append(slug)
-    if updated:
+    scanner_changed = manifest.get("scanner") != scanner
+    if scanner:
+        manifest["scanner"] = scanner
+    else:
+        manifest.pop("scanner", None)
+    if updated or scanner_changed:
         manifest.update({"key_id": key_id, "generated_at": now.isoformat()})
         # Publish the single mutable pointer only after every referenced file/signature exists.
         atomic_write(manifest_path, canonical(manifest))

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jedisct1/go-minisign"
@@ -250,6 +251,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		rep.AddContainers(scanContainers(container.Discover("/proc", "/var/lib/docker"), fetch, *all), true)
 	}
 
+	update := newerRelease(Version, res.LatestScanner)
 	if *only != "" {
 		rep.FilterPackage(*only)
 	}
@@ -262,6 +264,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		}
 		rep = sub
 	}
+	rep.Update = update
 	if *format == "json" {
 		if err := rep.WriteJSON(stdout); err != nil {
 			return fail("输出失败", err)
@@ -529,4 +532,16 @@ func nonEmpty(s string) []string {
 		return nil
 	}
 	return []string{s}
+}
+
+// newerRelease returns latest if it is a newer release than current.
+func newerRelease(current, latest string) string {
+	if latest == "" || !strings.HasPrefix(current, "v") {
+		return "" // development builds never nag
+	}
+	c, err := version.Compare(version.Go, strings.TrimPrefix(latest, "v"), strings.TrimPrefix(current, "v"))
+	if err != nil || c <= 0 {
+		return ""
+	}
+	return latest
 }

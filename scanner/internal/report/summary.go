@@ -293,6 +293,7 @@ func (r *Report) writeSummary(t term) {
 	t.paint(cDim, "看完整报告（全部漏洞、验证命令、参考链接）：")
 	t.paint(cCmd, prefix+"--all")
 	fmt.Fprintln(t)
+	r.writeUpdate(t)
 }
 
 var argSafe = regexp.MustCompile(`^[A-Za-z0-9.+_-]+( [A-Za-z0-9.+_-]+)*$`)
@@ -751,4 +752,20 @@ func (r *Report) goRemedy(g *pkgGroup) ([][2]string, []string) {
 		add("注意", "该程序正在对外提供服务，升级后需重启才会生效")
 	}
 	return out, bins
+}
+
+// InstallCommand updates (or installs) the scanner; install.sh verifies the
+// release signature before replacing the binary.
+const InstallCommand = "curl -fsSL https://sec.ly2u.com/install.sh | sh"
+
+// writeUpdate is the "new version available" hint. It never updates anything.
+func (r *Report) writeUpdate(t term) {
+	if r.Update == "" {
+		return
+	}
+	fmt.Fprintln(t)
+	t.paint(cYellow, fmt.Sprintf("有新版本 %s（当前 %s）", r.Update, r.Scanner))
+	t.paint(cDim, "，更新：")
+	t.paint(cCmd, InstallCommand)
+	fmt.Fprintln(t)
 }

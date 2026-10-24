@@ -122,3 +122,15 @@ func TestEmbeddedProductionKeyMatchesRepository(t *testing.T) {
 		t.Fatalf("expected production key id, got %v", keys)
 	}
 }
+
+func TestManifestLatestScannerIsValidated(t *testing.T) {
+	m, err := ParseManifest([]byte(`{"schema":1,"bundles":{},"scanner":{"latest":"v0.1.4"}}`))
+	if err != nil || m.Scanner == nil || !releaseTag.MatchString(m.Scanner.Latest) {
+		t.Fatalf("%+v %v", m, err)
+	}
+	for _, bad := range []string{"v0.1.4\x1b[2J", "latest", "v1.2", "0.1.4"} {
+		if releaseTag.MatchString(bad) {
+			t.Errorf("%q must be rejected", bad)
+		}
+	}
+}

@@ -326,3 +326,15 @@ func TestFailOnThreshold(t *testing.T) {
 		t.Error("threshold comparison")
 	}
 }
+
+func TestUpdateHint(t *testing.T) {
+	r := outdatedHost(false)
+	if strings.Contains(render(r), "有新版本") {
+		t.Error("no hint without a newer release")
+	}
+	r.Update = "v0.1.4"
+	out := render(r)
+	if !strings.HasSuffix(strings.TrimSpace(out), "有新版本 v0.1.4（当前 v0.1.1），更新：curl -fsSL https://sec.ly2u.com/install.sh | sh") {
+		t.Errorf("the hint is the last line:\n%s", out)
+	}
+}

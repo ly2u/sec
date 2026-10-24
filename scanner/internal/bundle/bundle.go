@@ -96,7 +96,14 @@ type Manifest struct {
 	KeyID       string                   `json:"key_id"`
 	GeneratedAt string                   `json:"generated_at"`
 	Bundles     map[string]ManifestEntry `json:"bundles"`
+	// Scanner: the latest released scanner, for "new version available".
+	// The manifest is not signed, so this is only ever shown as a hint.
+	Scanner *struct {
+		Latest string `json:"latest"`
+	} `json:"scanner,omitempty"`
 }
+
+var releaseTag = regexp.MustCompile(`^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$`)
 
 type ManifestEntry struct {
 	File        string `json:"file"`

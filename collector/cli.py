@@ -34,6 +34,7 @@ def main():
     commands.add_parser("bundles", help="Publish changed signed distro bundles")
     commands.add_parser("nodejs", help="Import the Node.js security-wg core database")
     commands.add_parser("golang", help="Import the Go vulnerability database (OSV export)")
+    commands.add_parser("release", help="Record the latest scanner release for update notices")
     commands.add_parser(
         "upstream-backfill", help="Derive L2 product ranges from all stored CVE records once"
     )
@@ -83,6 +84,15 @@ def main():
         http = FeedHTTP()
         try:
             print(json.dumps(NodejsAdapter(http).run(engine)))
+        finally:
+            http.close()
+        return
+    if args.command == "release":
+        from collector.release import check
+
+        http = FeedHTTP()
+        try:
+            print(json.dumps(check(http, engine)))
         finally:
             http.close()
         return

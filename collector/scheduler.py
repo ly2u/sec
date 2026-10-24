@@ -20,6 +20,7 @@ from collector.adapters.osv import OSVAdapter
 from collector.bundles import generate
 from collector.distros import BASES, RELEASES
 from collector.http import FeedHTTP
+from collector.release import check as check_release
 from collector.store import upsert
 from collector.telegram import broadcast
 
@@ -32,6 +33,7 @@ TASKS = {
     "epss": 86400,
     "nodejs": 21600,
     "golang": 21600,
+    "release": 3600,
     "telegram": 300,
 }
 
@@ -88,6 +90,8 @@ def perform(engine, task):
             result = NodejsAdapter(http).run(engine)
         elif task == "golang":
             result = GoAdapter(http).run(engine)
+        elif task == "release":
+            result = check_release(http, engine)
         else:
             result = {base: OSVAdapter(http).delta(engine, base, limit=None) for base in BASES}
         changed = (

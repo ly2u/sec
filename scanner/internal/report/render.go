@@ -182,6 +182,7 @@ func (r *Report) WriteText(out io.Writer) {
 	switch {
 	case r.only != "":
 		r.writePackage(t)
+		r.writeUpdate(t)
 		return
 	case !r.showAll:
 		r.writeSummary(t)
@@ -469,6 +470,7 @@ func (r *Report) WriteText(out io.Writer) {
 		return
 	}
 	r.writeNextSteps(w, fixable)
+	r.writeUpdate(t)
 }
 
 // writeDetailed lists every actionable package with its own upgrade, verify

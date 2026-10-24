@@ -34,6 +34,9 @@ type Result struct {
 	KeyID     string
 	FromCache bool
 	Warnings  []string
+	// LatestScanner is the newest released scanner version the data source
+	// knows of ("v0.1.4"), for an update hint; empty if unknown.
+	LatestScanner string
 }
 
 func (s *Source) client() *http.Client {
@@ -183,6 +186,9 @@ func (s *Source) Fetch(ctx context.Context, distro, release string) (*Result, er
 	}
 	res.FromCache = fromCache
 	res.Warnings = append(warnings, res.Warnings...)
+	if manifest.Scanner != nil && releaseTag.MatchString(manifest.Scanner.Latest) {
+		res.LatestScanner = manifest.Scanner.Latest
+	}
 	return res, nil
 }
 

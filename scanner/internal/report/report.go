@@ -57,6 +57,8 @@ type Report struct {
 	showAll           bool
 	only              string // --pkg: show one package in full
 	stalePackages     map[string]bool
+	// Update: a newer scanner release ("v0.1.4"), set by the caller.
+	Update string `json:"scanner_update,omitempty"`
 	// Color enables ANSI styles in the text report (set for colour terminals).
 	Color bool `json:"-"`
 }

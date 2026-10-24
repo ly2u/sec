@@ -510,3 +510,17 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 		t.Errorf("without Go data the programs are only listed, and the report says why\n%s", stdout.String())
 	}
 }
+
+func TestNewerRelease(t *testing.T) {
+	for _, c := range []struct{ current, latest, want string }{
+		{"v0.1.3", "v0.1.4", "v0.1.4"},
+		{"v0.1.10", "v0.1.9", ""},
+		{"v0.1.4", "v0.1.4", ""},
+		{"dev", "v0.1.4", ""},
+		{"v0.1.3", "", ""},
+	} {
+		if got := newerRelease(c.current, c.latest); got != c.want {
+			t.Errorf("newerRelease(%s, %s) = %q", c.current, c.latest, got)
+		}
+	}
+}

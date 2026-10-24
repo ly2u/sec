@@ -51,12 +51,15 @@ jobs:
           go build -o ../dist/mkbundle ./internal/tools/mkbundle
           ../dist/secwatch version
       # Known vulnerabilities that the scanner's code can actually reach, in
-      # its dependencies and the Go standard library. Reported as warnings;
-      # Dependabot opens the upgrade PRs.
+      # its dependencies and the Go standard library. CI only warns (with a
+      # visible annotation); the release workflow refuses to publish.
       - name: govulncheck
         working-directory: scanner
-        continue-on-error: true
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        shell: bash
+        run: |
+          if ! go run golang.org/x/vuln/cmd/govulncheck@latest ./...; then
+            echo "::warning title=govulncheck::扫描器代码会用到的依赖或 Go 标准库有已知漏洞；发布会被拦截，请先合并 Dependabot 的升级 PR"
+          fi
       - name: Real-distro container tests
         run: scanner/testdata/integration/run.sh dist/secwatch dist/mkbundle
       - name: Installer

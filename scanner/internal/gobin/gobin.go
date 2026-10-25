@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
+	"github.com/ly2u/sec/scanner/internal/container"
 	"github.com/ly2u/sec/scanner/internal/match"
 	"github.com/ly2u/sec/scanner/internal/system"
 	"github.com/ly2u/sec/scanner/internal/version"
@@ -234,15 +235,15 @@ func processes(proc string, pids []int, host bool) []Candidate {
 			dirs = append(dirs, strconv.Itoa(p))
 		}
 	}
-	self, _ := os.Readlink(filepath.Join(proc, "self/ns/mnt"))
 	seen := map[string]bool{}
 	var out []Candidate
 	for _, d := range dirs {
 		base := filepath.Join(proc, d)
-		if host {
-			if ns, err := os.Readlink(filepath.Join(base, "ns/mnt")); err != nil || ns != self {
-				continue
-			}
+		// Containers are scanned separately. A different mount namespace alone
+		// does not mean a container: systemd services with ProtectSystem or
+		// PrivateTmp (Caddy, MariaDB, nginx…) have one too.
+		if host && container.ID(base) != "" {
+			continue
 		}
 		exe, err := os.Readlink(filepath.Join(base, "exe"))
 		if err != nil {

@@ -179,3 +179,24 @@ func TestDisplayName(t *testing.T) {
 		}
 	}
 }
+
+// A systemd service with ProtectSystem/PrivateTmp runs in its own mount
+// namespace but is a host program; only a container ID marks a container.
+func TestHostProcessesKeepSandboxedServices(t *testing.T) {
+	proc := t.TempDir()
+	exe, _ := os.Executable()
+	mk := func(pid, ns, cgroup string) {
+		os.MkdirAll(filepath.Join(proc, pid, "ns"), 0o755)
+		os.Symlink(ns, filepath.Join(proc, pid, "ns/mnt"))
+		os.Symlink(exe, filepath.Join(proc, pid, "exe"))
+		os.WriteFile(filepath.Join(proc, pid, "cgroup"), []byte(cgroup), 0o644)
+	}
+	os.MkdirAll(filepath.Join(proc, "self/ns"), 0o755)
+	os.Symlink("mnt:[1]", filepath.Join(proc, "self/ns/mnt"))
+	mk("100", "mnt:[7]", "0::/system.slice/caddy.service\n")
+	mk("200", "mnt:[8]", "0::/system.slice/docker-3f2a9c1d4e5b6a7980112233445566778899aabbccddeeff0011223344556677.scope\n")
+	got := HostProcesses(proc)
+	if len(got) != 1 || got[0].Unit != "caddy.service" || !got[0].Running {
+		t.Fatalf("sandboxed service kept with its unit, container process left to the container scan: %+v", got)
+	}
+}

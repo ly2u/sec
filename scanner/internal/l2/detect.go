@@ -280,7 +280,10 @@ func (d *discovery) processes() {
 		if r == nil {
 			continue
 		}
-		if ns, err := os.Readlink(filepath.Join(base, "ns/mnt")); err == nil && self != "" && ns != self {
+		// In a container: its own mount namespace and a container ID. A systemd
+		// sandbox (ProtectSystem, PrivateTmp) has the namespace but no ID and
+		// is an ordinary host service.
+		if ns, err := os.Readlink(filepath.Join(base, "ns/mnt")); err == nil && self != "" && ns != self && containerID(base) != "" {
 			d.res.Containers = append(d.res.Containers, ContainerProcess{
 				Product: r.Slug, Name: filepath.Base(exe), PID: pid, Container: containerID(base),
 			})

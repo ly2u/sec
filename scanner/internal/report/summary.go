@@ -23,7 +23,6 @@ const (
 	pkgCVERows = 15 // vulnerabilities listed per package in the --pkg view
 )
 
-
 // ANSI styles, used only when the output is a colour terminal.
 const (
 	cRed    = "1;31"

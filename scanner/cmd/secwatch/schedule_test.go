@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ly2u/sec/scanner/internal/notify"
 )
@@ -116,8 +117,19 @@ func TestScheduleWithoutSystemdPrintsCronLine(t *testing.T) {
 	if err := s.install(c, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "17 */6 * * * /usr/local/bin/secwatch scan --notify") || len(f.calls) != 0 {
+	if !strings.Contains(out.String(), "17 */6 * * * /usr/local/bin/secwatch scan --notify") || len(f.calls) != 0 || strings.Contains(out.String(), "无法精确") {
 		t.Errorf("%s %v", out, f.calls)
+	}
+	for every, want := range map[string]string{"0.5": "*/30 * * * *", "1.5": "17 */2 * * *", "18": "17 3 * * *", "3d": "17 3 */3 * *"} {
+		d, _ := notify.ParseEvery(every)
+		if spec, _ := cronSpec(d); spec != want {
+			t.Errorf("%s: %s, want %s", every, spec, want)
+		}
+	}
+	out.Reset()
+	s.install(&notify.Config{Every: "1.5", NotifyOn: "P1", Webhook: c.Webhook}, false)
+	if !strings.Contains(out.String(), "cron 无法精确表示每 1.5 小时，这一行实际是每 2 小时检查一次") {
+		t.Errorf("%s", out)
 	}
 }
 
@@ -150,4 +162,34 @@ func TestScanNotify(t *testing.T) {
 		t.Errorf("same problem is not sent again: %d %s", len(sent), stdout.String())
 	}
 	t.Log("\n" + sent[0].Text)
+}
+
+// A scheduled check that cannot complete is recorded, and after a day of
+// failures the user is told once.
+func TestScheduledFailureIsNotSilent(t *testing.T) {
+	dir := t.TempDir()
+	cfg, state := filepath.Join(dir, "notify.json"), filepath.Join(dir, "state.json")
+	notify.Save(cfg, &notify.Config{Every: "1", NotifyOn: "P1", Telegram: &notify.Telegram{Token: testToken, ChatID: "42"}})
+	var sent []notify.Payload
+	send := func(c *notify.Config, p notify.Payload) error { sent = append(sent, p); return nil }
+	var stderr bytes.Buffer
+	t0 := time.Date(2026, 10, 25, 8, 0, 0, 0, time.UTC)
+	for _, h := range []int{0, 1, 23} {
+		notifyFailure(cfg, state, &stderr, send, t0.Add(time.Duration(h)*time.Hour))
+	}
+	if st := notify.LoadState(state); len(sent) != 0 || st.LastTitle != "检查未完成" || !st.FailingSince.Equal(t0) {
+		t.Fatalf("recorded, not yet sent: %d %+v", len(sent), st)
+	}
+	notifyFailure(cfg, state, &stderr, send, t0.Add(24*time.Hour))
+	notifyFailure(cfg, state, &stderr, send, t0.Add(30*time.Hour))
+	if len(sent) != 1 || sent[0].Kind != "failing" || !strings.Contains(sent[0].Text, "一直没能完成") {
+		t.Fatalf("told exactly once: %+v", sent)
+	}
+	// A successful run starts over.
+	next := notify.State{}
+	notify.SaveState(state, next)
+	notifyFailure(cfg, state, &stderr, send, t0.Add(40*time.Hour))
+	if st := notify.LoadState(state); st.FailNotified || !st.FailingSince.Equal(t0.Add(40*time.Hour)) {
+		t.Errorf("%+v", st)
+	}
 }

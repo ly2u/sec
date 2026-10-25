@@ -133,7 +133,8 @@ type aptIndex struct {
 	officialSrc map[string]bool
 	lists       int
 	skipped     int
-	esm         bool // Ubuntu Pro (ESM) repositories are configured
+	updated     time.Time // newest index file: when apt-get update last ran
+	esm         bool      // Ubuntu Pro (ESM) repositories are configured
 }
 
 var officialOrigins = map[string]bool{
@@ -205,6 +206,11 @@ func loadAptIndex(h Host) *aptIndex {
 	}
 	for _, e := range entries {
 		idx.addList(h, e.Name())
+		if strings.Contains(e.Name(), "_Packages") {
+			if info, err := e.Info(); err == nil && info.ModTime().After(idx.updated) {
+				idx.updated = info.ModTime()
+			}
+		}
 	}
 	return idx
 }
@@ -299,6 +305,10 @@ func (idx *aptIndex) addList(h Host, name string) {
 		}
 	})
 }
+
+// FreshLists is how old the apt lists may be for "no newer version in the
+// repository" to be believed; Debian's apt-daily refreshes them every day.
+const FreshLists = 7 * 24 * time.Hour
 
 // newer returns the newest version the apt lists offer above p's, if any.
 func (idx *aptIndex) newer(p Package) string {
@@ -487,7 +497,8 @@ type Inventory struct {
 	// UbuntuPro is true when ESM repositories are configured, i.e. fixes that
 	// require a Pro subscription are installable on this machine.
 	UbuntuPro bool
-	// Indexed is true when the apt lists were read, so Package.Newer is known.
+	// Indexed is true when recent apt lists were read (apt-get update within
+	// FreshLists), so Package.Newer can be trusted.
 	Indexed bool
 }
 
@@ -516,7 +527,7 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 			pkgs[i].Origin, pkgs[i].OriginLabel = idx.classify(pkgs[i])
 			pkgs[i].Newer = idx.newer(pkgs[i])
 		}
-		inv.Indexed = idx.lists > 0
+		inv.Indexed = idx.lists > 0 && time.Since(idx.updated) < FreshLists
 		inv.UbuntuPro = idx.esm
 		inv.Packages = pkgs
 	case version.RPM:

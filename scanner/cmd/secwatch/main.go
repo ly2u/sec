@@ -165,6 +165,9 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	}
 	rep, update, err := buildReport(o, stderr)
 	if err != nil {
+		if o.notify {
+			notifyFailure(o.notifyConfig, o.notifyState, stderr, notifySender, time.Now())
+		}
 		return exitError
 	}
 	if o.notify {
@@ -653,6 +656,34 @@ func sendNotification(c *notify.Config, p notify.Payload) error {
 	return notify.Send(ctx, c, p)
 }
 
+// notifyFailure records a scheduled check that could not complete, and tells
+// the user once when checks have been failing for FailAfter: silence must
+// not look like "all is well".
+func notifyFailure(cfgPath, statePath string, stderr io.Writer, send func(*notify.Config, notify.Payload) error, now time.Time) {
+	st := notify.LoadState(statePath)
+	if st.FailingSince.IsZero() {
+		st.FailingSince = now
+	}
+	st.LastRun, st.LastTitle, st.LastResult = now, "检查未完成", "原因见 journalctl -u secwatch.service"
+	if !st.FailNotified && now.Sub(st.FailingSince) >= notify.FailAfter {
+		if c, err := notify.Load(cfgPath); err == nil {
+			host := hostname(system.Host{Root: "/"})
+			label := host
+			if label == "" {
+				label = "服务器"
+			}
+			text := fmt.Sprintf("⚠️ %s：SecWatch 定时检查从 %s 起一直没能完成\n查看原因：journalctl -u secwatch.service -n 20\n— LY2U SecWatch %s",
+				label, st.FailingSince.Local().Format("01-02 15:04"), Version)
+			if send(c, notify.Payload{Host: host, Kind: "failing", Level: "unknown", Title: "检查未完成", Text: text, Version: Version}) == nil {
+				st.FailNotified = true
+			}
+		}
+	}
+	if err := notify.SaveState(statePath, st); err != nil {
+		fmt.Fprintf(stderr, "secwatch: 保存通知记录失败：%v\n", err)
+	}
+}
+
 // runNotify is the scheduled run (secwatch scan --notify): decide from this
 // scan and what was already notified whether to send anything, and print
 // one line for the journal.
@@ -678,6 +709,7 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 			// What was notified stays as it was, so the next run tries again.
 			prev := notify.LoadState(statePath)
 			prev.LastRun, prev.LastTitle, prev.LastResult = now, title, "通知发送失败，下次重试"
+			prev.FailingSince, prev.FailNotified = time.Time{}, false
 			notify.SaveState(statePath, prev)
 			fmt.Fprintf(stderr, "secwatch: 通知发送失败，下次检查会重试：%v\n", err)
 			fmt.Fprintf(stdout, "%s：%s；通知发送失败\n", title, msg)

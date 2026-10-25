@@ -205,7 +205,13 @@ type State struct {
 	LastRun    time.Time `json:"last_run,omitempty"`
 	LastTitle  string    `json:"last_title,omitempty"`  // "状态良好"
 	LastResult string    `json:"last_result,omitempty"` // "无需通知"
+	// Scheduled checks that could not complete (no data, unsupported...).
+	FailingSince time.Time `json:"failing_since,omitempty"`
+	FailNotified bool      `json:"fail_notified,omitempty"`
 }
+
+// FailAfter is how long checks may keep failing before the user is told.
+const FailAfter = 24 * time.Hour
 
 type Item struct {
 	Text  string    `json:"text"`
@@ -314,7 +320,7 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 // Payload is the webhook body.
 type Payload struct {
 	Host    string   `json:"host"`
-	Kind    string   `json:"kind"`  // new, reminder, resolved, test
+	Kind    string   `json:"kind"`  // new, reminder, resolved, test, failing
 	Level   string   `json:"level"` // urgent, soon, ok
 	Title   string   `json:"title"`
 	Verdict string   `json:"verdict"`

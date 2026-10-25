@@ -174,7 +174,11 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 		return fmt.Errorf("写入配置失败：%w", err)
 	}
 	if !s.systemd {
-		fmt.Fprintf(s.out, "配置已保存到 /%s。\n这台机器没有 systemd，请用 crontab -e 添加下面一行：\n  %s %s scan --notify >/dev/null 2>&1\n", configFile, cronSpec(every), s.exe)
+		spec, actual := cronSpec(every)
+		fmt.Fprintf(s.out, "配置已保存到 /%s。\n这台机器没有 systemd，请用 crontab -e 添加下面一行：\n  %s %s scan --notify >/dev/null 2>&1\n", configFile, spec, s.exe)
+		if actual != every {
+			fmt.Fprintf(s.out, "（cron 无法精确表示每 %s，这一行实际是每 %s检查一次）\n", humanEvery(every), humanEvery(actual))
+		}
 		return nil
 	}
 	if err := writeFile(s.path(filepath.Join(unitDir, unitName+".service")), serviceUnit(s.exe)); err != nil {
@@ -381,15 +385,22 @@ func humanEvery(d time.Duration) string {
 	return strconv.FormatFloat(d.Hours(), 'f', -1, 64) + " 小时"
 }
 
-// cronSpec approximates the interval for systems without systemd.
-func cronSpec(d time.Duration) string {
+// cronSpec expresses the interval for systems without systemd. cron cannot
+// say every 90 minutes, so other intervals are rounded to whole hours or
+// days; actual is what the line really does.
+func cronSpec(d time.Duration) (spec string, actual time.Duration) {
 	switch {
 	case d < time.Hour:
-		return fmt.Sprintf("*/%d * * * *", d/time.Minute)
+		return "*/30 * * * *", 30 * time.Minute
 	case d < 24*time.Hour:
-		return fmt.Sprintf("17 */%d * * *", d/time.Hour)
+		h := (d + 30*time.Minute) / time.Hour
+		if h > 12 {
+			return "17 3 * * *", 24 * time.Hour
+		}
+		return fmt.Sprintf("17 */%d * * *", h), h * time.Hour
 	}
-	return fmt.Sprintf("17 3 */%d * *", d/(24*time.Hour))
+	days := (d + 12*time.Hour) / (24 * time.Hour)
+	return fmt.Sprintf("17 3 */%d * *", days), days * 24 * time.Hour
 }
 
 func serviceUnit(exe string) string {

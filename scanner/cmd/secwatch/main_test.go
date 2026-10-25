@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ly2u/sec/scanner/internal/bundle"
 	"github.com/ly2u/sec/scanner/internal/container"
@@ -348,6 +349,17 @@ func TestL2EndToEnd(t *testing.T) {
 	}
 	if out := detail("--pkg", "docker-ce"); !strings.Contains(out, "软件源里已经是最新版，暂时无法升级") {
 		t.Errorf("--pkg explains why there is nothing to run\n%s", out)
+	}
+
+	// Lists not refreshed for weeks prove nothing: back to the upgrade step,
+	// whose command runs apt-get update first.
+	old := time.Now().Add(-10 * 24 * time.Hour)
+	entries, _ := os.ReadDir(filepath.Join(root, lists))
+	for _, e := range entries {
+		os.Chtimes(filepath.Join(root, lists, e.Name()), old, old)
+	}
+	if text := detail(); !strings.Contains(text, "Docker Engine             1 个漏洞    升级即可，见第 1 步") {
+		t.Errorf("stale lists must not claim there is nothing newer\n%s", text)
 	}
 }
 

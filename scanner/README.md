@@ -52,7 +52,7 @@ secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 
 ```
 sudo secwatch schedule                       # 交互设置 Telegram 机器人或 Webhook，默认每小时检查
-sudo secwatch schedule --every 0.5 --notify-on P0 --telegram-chat 123456789
+sudo secwatch schedule --every 6 --notify-on P0 --telegram-chat 123456789
 sudo secwatch schedule --status              # 查看设置与状态
 sudo secwatch schedule --remove              # 关闭并删除全部配置
 ```

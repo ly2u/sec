@@ -18,18 +18,36 @@ import (
 const token = "123456789:AAEhBP0av28F2Nn0WxWr3rS9Y2Lqo8pBcdE"
 
 func TestParseEvery(t *testing.T) {
+	// Saved settings: whole hours, and the forms v0.1.7 wrote.
 	for in, want := range map[string]time.Duration{
+		"1": time.Hour, "24": 24 * time.Hour, "720": 720 * time.Hour,
 		"30m": 30 * time.Minute, "2h": 2 * time.Hour, "1d": 24 * time.Hour,
-		"0.5": 30 * time.Minute, "1": time.Hour, "1.5": 90 * time.Minute, "24": 24 * time.Hour, "720": 720 * time.Hour,
 	} {
 		if got, err := ParseEvery(in); err != nil || got != want {
 			t.Errorf("%s: %v %v", in, got, err)
 		}
 	}
-	for _, bad := range []string{"10m", "29m", "0.5d", "abc", "45d", "1d2h", "0.4", "0", "721", "-1", ".5", "1e3"} {
+	for _, bad := range []string{"10m", "29m", "0.5d", "abc", "45d", "1d2h", "0", "0.5", "1.5", "721", "-1", ".5", "1e3", ""} {
 		if _, err := ParseEvery(bad); err == nil {
 			t.Errorf("%s must be refused", bad)
 		}
+	}
+}
+
+// What users type: whole hours only.
+func TestParseHours(t *testing.T) {
+	for _, ok := range []string{"1", "6", "24", "720"} {
+		if _, err := ParseHours(ok); err != nil {
+			t.Errorf("%s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"0", "0.5", "1.5", "30m", "2h", "1d", "721", "", " 1"} {
+		if _, err := ParseHours(bad); err == nil {
+			t.Errorf("%s must be refused", bad)
+		}
+	}
+	if _, err := ParseHours("0.5"); err == nil || !strings.Contains(err.Error(), "不支持小数") {
+		t.Errorf("%v", err)
 	}
 }
 

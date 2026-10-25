@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -48,23 +49,39 @@ var (
 	levelRe = regexp.MustCompile(`^P[012]$`)
 )
 
-// MinEvery is the shortest schedule: the data bundles change at most hourly.
-const MinEvery = 30 * time.Minute
+// MinEvery is the shortest interval: the data bundles change at most hourly.
+// Intervals are whole hours.
+const MinEvery = time.Hour
 
-// hoursRe is a plain number of hours, such as 0.5, 1 or 24.
-var hoursRe = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,2})?$`)
+// legacyMinEvery: v0.1.7 also accepted 30m; such settings keep working.
+const legacyMinEvery = 30 * time.Minute
 
-// ParseEvery accepts a number of hours (0.5, 6), Go durations (30m, 2h)
-// and a "d" suffix for days.
+var hoursRe = regexp.MustCompile(`^[0-9]{1,4}$`)
+
+// ParseHours parses an interval the user types: whole hours, 1 to 720.
+func ParseHours(s string) (time.Duration, error) {
+	if !hoursRe.MatchString(s) {
+		return 0, fmt.Errorf("请填整数小时，例如 1、6、24（不支持小数）")
+	}
+	h, _ := strconv.Atoi(s)
+	switch {
+	case h < 1:
+		return 0, fmt.Errorf("间隔最少 1 小时（漏洞数据最多每小时更新一次）")
+	case h > 720:
+		return 0, fmt.Errorf("间隔最多 720 小时（30 天）")
+	}
+	return time.Duration(h) * time.Hour, nil
+}
+
+// ParseEvery parses a saved interval: whole hours, or the 30m/2h/1d forms
+// written by v0.1.7.
 func ParseEvery(s string) (time.Duration, error) {
+	if hoursRe.MatchString(s) {
+		return ParseHours(s)
+	}
 	var d time.Duration
 	var err error
-	if hoursRe.MatchString(s) {
-		var h float64
-		if _, err = fmt.Sscanf(s, "%g", &h); err == nil {
-			d = time.Duration(h*60+0.5) * time.Minute
-		}
-	} else if n, ok := strings.CutSuffix(s, "d"); ok {
+	if n, ok := strings.CutSuffix(s, "d"); ok {
 		var days int
 		if _, err = fmt.Sscanf(n, "%d", &days); err == nil && fmt.Sprint(days) == n {
 			d = time.Duration(days) * 24 * time.Hour
@@ -75,10 +92,10 @@ func ParseEvery(s string) (time.Duration, error) {
 		d, err = time.ParseDuration(s)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("无法识别的间隔 %q：请填小时数，例如 0.5、1、6、24", s)
+		return 0, fmt.Errorf("无法识别的间隔 %q：请填整数小时，例如 1、6、24", s)
 	}
-	if d < MinEvery {
-		return 0, fmt.Errorf("间隔最少 0.5 小时（漏洞数据最多每小时更新一次）")
+	if d < legacyMinEvery {
+		return 0, fmt.Errorf("间隔最少 1 小时（漏洞数据最多每小时更新一次）")
 	}
 	if d > 30*24*time.Hour {
 		return 0, fmt.Errorf("间隔最多 720 小时（30 天）")

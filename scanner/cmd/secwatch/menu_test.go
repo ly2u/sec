@@ -18,7 +18,7 @@ func testMenu(t *testing.T, answers string, root bool) (*menu, *fakeSystem, *str
 // Turn the scheduled check on from the menu, test it, then turn it off.
 func TestMenuScheduleLifecycle(t *testing.T) {
 	answers := "3\n" + // turn on
-		"0.5\n\n" + // every half an hour, default level
+		"0.5\n2\n\n" + // decimals refused, then every 2 hours, default level
 		testToken + "\n42\n\n" + // Telegram, direct API
 		"\n" + // no webhook
 		"\n" + // back to the menu
@@ -32,7 +32,7 @@ func TestMenuScheduleLifecycle(t *testing.T) {
 	o := out.String()
 	for _, want := range []string{
 		"定时检查  未开启", "3  开启定时检查与通知",
-		"定时检查  已开启 · 每 0.5 小时 · Telegram · 尽快处理及以上", "5  关闭定时检查",
+		"定时检查  已开启 · 每 2 小时 · Telegram · 尽快处理及以上", "不支持小数", "5  关闭定时检查",
 		"测试通知已发送", "已关闭定时检查",
 	} {
 		if !strings.Contains(o, want) {
@@ -60,11 +60,11 @@ func TestMenuModifyKeepsCurrent(t *testing.T) {
 	notify.SaveState(m.sched.path(stateFile), notify.State{LastRun: time.Now(), LastTitle: "状态良好", LastResult: "无需通知"})
 	m.run()
 	c, err := notify.Load(m.sched.path(configFile))
-	if err != nil || c.Every != "6h" || c.NotifyOn != "P0" || c.Telegram.Token != testToken || c.Webhook != nil {
+	if err != nil || c.Every != "6" || c.NotifyOn != "P0" || c.Telegram.Token != testToken || c.Webhook != nil {
 		t.Fatalf("%+v %v", c, err)
 	}
 	o := out.String()
-	for _, want := range []string{"上次检查  ", "状态良好 · 无需通知", "回车保持 6 小时", "保留现在的 Telegram（Chat 42 · Token 123456789:…BcdE）"} {
+	for _, want := range []string{"上次检查  ", "状态良好 · 无需通知", "回车为 6：", "保留现在的 Telegram（Chat 42 · Token 123456789:…BcdE）"} {
 		if !strings.Contains(o, want) {
 			t.Errorf("missing %q:\n%s", want, o)
 		}

@@ -41,10 +41,10 @@ func newScheduler(t *testing.T, answers string, systemd bool) (*scheduler, *fake
 
 func TestScheduleInstallInteractive(t *testing.T) {
 	s, f, out := newScheduler(t, testToken+"\n-1001234567890\n\nhttps://hooks.example.invalid/x\n", true)
-	if err := s.install(&notify.Config{Every: "30m", NotifyOn: "P1"}, true); err != nil {
+	if err := s.install(&notify.Config{Every: "2", NotifyOn: "P1"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.sent) != 1 || f.sent[0].Kind != "test" || !strings.Contains(f.sent[0].Text, "每 0.5 小时检查一次") {
+	if len(f.sent) != 1 || f.sent[0].Kind != "test" || !strings.Contains(f.sent[0].Text, "每 2 小时检查一次") {
 		t.Fatalf("a test message comes first: %+v", f.sent)
 	}
 	st, err := os.Stat(s.path(configFile))
@@ -62,7 +62,7 @@ func TestScheduleInstallInteractive(t *testing.T) {
 			t.Errorf("service missing %q", want)
 		}
 	}
-	if !strings.Contains(string(timer), "OnUnitActiveSec=1800s") || !strings.Contains(string(timer), "RandomizedDelaySec") {
+	if !strings.Contains(string(timer), "OnUnitActiveSec=7200s") || !strings.Contains(string(timer), "RandomizedDelaySec") {
 		t.Errorf("timer:\n%s", timer)
 	}
 	if strings.Join(f.calls, "|") != "daemon-reload|enable --now secwatch.timer" {
@@ -104,7 +104,7 @@ func TestScheduleRefusesBeforeWritingAnything(t *testing.T) {
 	if fileExists(s.path(configFile)) || len(f.calls) != 0 {
 		t.Error("a failed test message leaves the system untouched")
 	}
-	for _, every := range []string{"10m", "5m"} {
+	for _, every := range []string{"10m", "5m", "0"} {
 		if err := s.install(&notify.Config{Every: every, NotifyOn: "P1", Telegram: c.Telegram}, false); err == nil {
 			t.Errorf("%s is below the 30 minute minimum", every)
 		}
@@ -113,22 +113,22 @@ func TestScheduleRefusesBeforeWritingAnything(t *testing.T) {
 
 func TestScheduleWithoutSystemdPrintsCronLine(t *testing.T) {
 	s, f, out := newScheduler(t, "", false)
-	c := &notify.Config{Every: "6h", NotifyOn: "P0", Webhook: &notify.Webhook{URL: "https://hooks.example.invalid/x"}}
+	c := &notify.Config{Every: "6", NotifyOn: "P0", Webhook: &notify.Webhook{URL: "https://hooks.example.invalid/x"}}
 	if err := s.install(c, false); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "17 */6 * * * /usr/local/bin/secwatch scan --notify") || len(f.calls) != 0 || strings.Contains(out.String(), "无法精确") {
 		t.Errorf("%s %v", out, f.calls)
 	}
-	for every, want := range map[string]string{"0.5": "*/30 * * * *", "1.5": "17 */2 * * *", "18": "17 3 * * *", "3d": "17 3 */3 * *"} {
+	for every, want := range map[string]string{"30m": "*/30 * * * *", "1": "17 */1 * * *", "18": "17 3 * * *", "72": "17 3 */3 * *"} {
 		d, _ := notify.ParseEvery(every)
 		if spec, _ := cronSpec(d); spec != want {
 			t.Errorf("%s: %s, want %s", every, spec, want)
 		}
 	}
 	out.Reset()
-	s.install(&notify.Config{Every: "1.5", NotifyOn: "P1", Webhook: c.Webhook}, false)
-	if !strings.Contains(out.String(), "cron 无法精确表示每 1.5 小时，这一行实际是每 2 小时检查一次") {
+	s.install(&notify.Config{Every: "18", NotifyOn: "P1", Webhook: c.Webhook}, false)
+	if !strings.Contains(out.String(), "cron 无法精确表示每 18 小时，这一行实际是每 24 小时检查一次") {
 		t.Errorf("%s", out)
 	}
 }

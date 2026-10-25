@@ -56,7 +56,7 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
 | `secwatch scan --all` | 完整报告：全部漏洞、验证命令、参考链接 |
 | `secwatch scan --format json` | 给脚本和监控用 |
 | `secwatch scan --fail-on P2` | 给自己的脚本用：达到该级别时退出码为 3 |
-| `sudo secwatch schedule` | 定时检查，有新问题时通知你的 Telegram 或 Webhook（单位小时，最少 0.5；`--remove` 关闭） |
+| `sudo secwatch schedule` | 定时检查，有新问题时通知你的 Telegram 或 Webhook（整数小时，最少 1；`--remove` 关闭） |
 
 漏洞数据每次扫描都会自动获取最新版，不需要为了新漏洞更新程序。程序本身有新版本时，报告最后会提示一行；更新就是重新运行安装命令。程序只提示，从不自动更新自己。
 

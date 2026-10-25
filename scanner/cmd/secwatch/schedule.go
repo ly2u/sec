@@ -62,6 +62,12 @@ func schedule(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
 		return exitUsage
 	}
+	if !*status && !*remove {
+		if _, err := notify.ParseHours(*every); err != nil {
+			fmt.Fprintf(stderr, "--every：%v\n", err)
+			return exitUsage
+		}
+	}
 	if os.Geteuid() != 0 {
 		fmt.Fprintln(stderr, "secwatch schedule 需要 root：sudo secwatch schedule")
 		return exitUsage
@@ -215,18 +221,21 @@ func (s *scheduler) sendTest(c *notify.Config, headline string) error {
 func (s *scheduler) configure(cur *notify.Config) (*notify.Config, bool) {
 	c := &notify.Config{Every: "1", NotifyOn: "P1"}
 	if cur != nil {
-		c.Every, c.NotifyOn = cur.Every, cur.NotifyOn
+		c.NotifyOn = cur.NotifyOn
+		// Settings from v0.1.7 (30m, 2h) become whole hours.
+		if d, err := notify.ParseEvery(cur.Every); err == nil && d%time.Hour == 0 {
+			c.Every = strconv.Itoa(int(d / time.Hour))
+		}
 	}
 	for {
-		d, _ := notify.ParseEvery(c.Every)
-		a, ok := s.prompt(fmt.Sprintf("每隔几小时检查一次？单位：小时，最少 0.5（例如 0.5、1、6、24）；回车保持 %s：", humanEvery(d)))
+		a, ok := s.prompt(fmt.Sprintf("每隔几小时检查一次？填整数小时，最少 1（例如 1、6、24）；回车为 %s：", c.Every))
 		if !ok {
 			return nil, false
 		}
 		if a == "" {
 			break
 		}
-		if _, err := notify.ParseEvery(a); err != nil {
+		if _, err := notify.ParseHours(a); err != nil {
 			fmt.Fprintln(s.out, "  "+err.Error())
 			continue
 		}

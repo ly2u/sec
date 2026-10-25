@@ -97,10 +97,18 @@ func TestUpdateInstallsVerifiedRelease(t *testing.T) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
 	}
-	// Up to date now.
+	// Up to date now; a missing short name is still created.
 	u.current = "v0.2.0"
+	os.Remove(filepath.Join(filepath.Dir(exe), ShortName))
+	out.Reset()
 	if ver, err := u.run(); ver != "" || err != nil || !strings.Contains(out.String(), "已经是最新版本 v0.2.0") {
 		t.Errorf("%q %v", ver, err)
+	}
+	if !strings.Contains(out.String(), "已创建短命令 lysec") {
+		t.Errorf("short name added when up to date:\n%s", out)
+	}
+	if data, _ := os.ReadFile(exe); string(data) != "new secwatch v0.2.0" {
+		t.Error("binary untouched when up to date")
 	}
 }
 

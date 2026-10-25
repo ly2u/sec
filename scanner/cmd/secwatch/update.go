@@ -155,6 +155,10 @@ func (u *updater) run() (string, error) {
 	}
 	if newerRelease(u.current, ver) == "" {
 		fmt.Fprintf(u.out, "已经是最新版本 %s。\n", u.current)
+		// Installs made by an older install.sh have no short name yet.
+		if msg := ensureShortName(filepath.Dir(u.exe)); msg != "" {
+			fmt.Fprintln(u.out, msg)
+		}
 		return "", nil
 	}
 	fmt.Fprintf(u.out, "发现新版本 %s（当前 %s），签名有效，正在下载……\n", ver, u.current)

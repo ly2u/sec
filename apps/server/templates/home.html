@@ -36,8 +36,8 @@
   </section>
 </div>
 {% if risk.total %}
-<div class="meter">
-  <div class="wrap">
+<div class="wrap">
+  <div class="meter">
     <span class="meter-label">近 {{ risk.days }} 天新公开 <strong class="num">{{ "{:,}".format(risk.total) }}</strong> 个漏洞</span>
     <div class="meter-bar" role="img" aria-label="按优先级分布：{% for s in risk.segments %}{{ s.level }} {{ s.count }} 个{% if not loop.last %}，{% endif %}{% endfor %}">
       {% for s in risk.segments %}{% if s.count %}<span class="bg-{{ s.level }} w-{{ [1, s.share|round|int]|max }}"></span>{% endif %}{% endfor %}

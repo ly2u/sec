@@ -202,8 +202,8 @@ button.copy:hover { background: var(--line-2); }
 }
 
 /* risk meter */
-.meter { border-top: 1px solid var(--line); background: var(--meter-bg); }
-.meter .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1.4rem; padding-top: 0.95rem; padding-bottom: 1rem; }
+/* A card in the same column as the terminal above and the panels below. */
+.meter { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem 1.4rem; margin: -0.8rem 0 2rem; padding: 0.85rem 1.1rem; background: var(--meter-bg); border: 1px solid var(--line); border-radius: 12px; }
 .meter-label { color: var(--muted); font-size: 0.88rem; white-space: nowrap; }
 .meter-label strong { font-family: var(--mono); font-size: 1.2rem; color: var(--ink); }
 .meter-bar { flex: 1 1 18rem; display: flex; gap: 2px; height: 0.6rem; border-radius: 999px; overflow: hidden; min-width: 12rem; }

@@ -173,7 +173,7 @@ func TestVerdictWhenUrgentProgramCannotBeUpgraded(t *testing.T) {
 		}
 	}
 	_, title, msg := r.Verdict()
-	if title != "需要留意" || !strings.Contains(msg, "还没有新版本可升级") {
+	if title != "需要留意" || !strings.Contains(msg, "还没有可升级的版本") {
 		t.Errorf("%s %s", title, msg)
 	}
 	for i := range r.Findings {
@@ -183,5 +183,61 @@ func TestVerdictWhenUrgentProgramCannotBeUpgraded(t *testing.T) {
 	}
 	if level, title, msg := r.Verdict(); level != "urgent" || !strings.Contains(msg, "必要时先停止它对外服务") {
 		t.Errorf("%s %s %s", level, title, msg)
+	}
+}
+
+// Debian's caddy 2.6.2-5: the fix (2.6.2-5+deb12u1) is published but not in
+// the machine's repositories yet, so apt offers nothing newer.
+func TestFixNotInRepositoriesYet(t *testing.T) {
+	var fs []match.Finding
+	for _, id := range []string{"CVE-2026-27590", "CVE-2026-27587"} {
+		fs = append(fs, match.Finding{ID: id, CVEs: []string{id}, Package: "caddy", Binaries: []string{"caddy"}, InstalledVersion: "2.6.2-5",
+			FixedVersion: "2.6.2-5+deb12u1", Status: match.ConfirmedAffected, Fix: match.FixUpgrade, CVSS: f64(8.9), Layer: "L1", Priority: "P1"})
+	}
+	inv := &system.Inventory{Indexed: true, Packages: []system.Package{{Name: "caddy", Version: "2.6.2-5", Origin: system.Official}}}
+	o := system.OS{PrettyName: "Debian GNU/Linux 12 (bookworm)", Distro: "debian", Release: "12", Kind: version.Deb}
+	rt := &procinfo.Report{Exposed: map[string]bool{"caddy": true}} // serves the web: P1
+	build := func() *Report {
+		return Build("v0.1.11", o, inv, match.Result{Findings: fs, PackagesScanned: 395}, rt, DataInfo{KeyID: "X"}, nil, false, nil, nil)
+	}
+	r := build()
+	out := render(r)
+	for _, want := range []string{
+		"● 需要留意  1 项较严重的漏洞还没有可升级的版本",
+		"系统软件包  ✓ 395 个都没有待修的漏洞",
+		"等源更新  caddy  修复已发布，还没进你的软件源，通常随 Debian 下次小版本更新到达，现在无需操作",
+		"看详情  secwatch scan --pkg caddy",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "apt-get") || strings.Contains(out, "建议尽快更新") {
+		t.Errorf("nothing to run yet\n%s", out)
+	}
+	r.FilterPackage("caddy")
+	if out := render(r); !strings.Contains(out, "修复版本 2.6.2-5+deb12u1 已发布，但还没进你的软件源") {
+		t.Errorf("--pkg explains\n%s", out)
+	}
+	// Once apt offers a newer caddy, it is an ordinary update again.
+	inv.Packages[0].Newer = "2.6.2-5+deb12u1"
+	if out := render(build()); !strings.Contains(out, "● 建议尽快更新") || !strings.Contains(out, "apt-get") {
+		t.Errorf("available fix is an update\n%s", out)
+	}
+	// Stale lists prove nothing.
+	inv.Packages[0].Newer, inv.Indexed = "", false
+	if out := render(build()); !strings.Contains(out, "● 建议尽快更新") {
+		t.Errorf("without fresh lists, the usual advice\n%s", out)
+	}
+}
+
+func TestVerdictForPackagesWaitingForRepositories(t *testing.T) {
+	f := match.Finding{ID: "CVE-1", CVEs: []string{"CVE-1"}, Package: "caddy", Binaries: []string{"caddy"}, InstalledVersion: "2.6.2-5",
+		FixedVersion: "2.6.2-5+deb12u1", Status: match.ConfirmedAffected, Fix: match.FixUpgrade, CVSS: f64(5.4), Layer: "L1"}
+	inv := &system.Inventory{Indexed: true, Packages: []system.Package{{Name: "caddy", Version: "2.6.2-5", Origin: system.Official}}}
+	o := system.OS{Distro: "debian", Release: "12", Kind: version.Deb}
+	r := Build("v", o, inv, match.Result{Findings: []match.Finding{f}}, nil, DataInfo{}, nil, false, nil, nil)
+	if _, title, msg := r.Verdict(); title != "状态良好" || msg != "没有需要你处理的问题，1 个软件包的修复还没进你的软件源" {
+		t.Errorf("%s %s", title, msg)
 	}
 }

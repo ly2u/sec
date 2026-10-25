@@ -56,7 +56,10 @@ func (r *Report) Alerts(level string) []Alert {
 				tags = append(tags, "需重启")
 			}
 			wait := rep.waiting(g)
-			if wait {
+			switch {
+			case rep.fixNotInRepo(g):
+				tags = append(tags, "修复还没进软件源")
+			case wait:
 				tags = append(tags, "暂无新版可升级")
 			}
 			text := g.pkg + "（" + strings.Join(tags, " · ") + "）"

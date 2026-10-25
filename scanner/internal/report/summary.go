@@ -321,12 +321,15 @@ func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[strin
 	ref = map[string]int{}
 	distro, kernel, exposed := false, false, false
 	var separate, thirdParty []*pkgGroup
+	actionable := 0
 	for _, g := range fixable {
+		if r.noUpdate(g) || r.fixNotInRepo(g) {
+			continue // already the newest the repositories have: nothing to run yet
+		}
+		actionable++
 		switch {
 		case !g.l2:
 			distro = true
-		case r.noUpdate(g):
-			// Already the newest the repository has: nothing to run yet.
 		case g.findings[0].Method == "package":
 			thirdParty = append(thirdParty, g)
 		default:
@@ -336,7 +339,7 @@ func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[strin
 		kernel = kernel || hasKernel(g)
 	}
 	cmd := func(c, comment string) { steps = append(steps, [2]string{c, comment}) }
-	host := len(fixable) > 0
+	host := actionable > 0
 	var thirdBins, units []string
 	for _, g := range thirdParty {
 		if pkgs, bad := safeNames(g.findings[0].Binaries); len(bad) == 0 {
@@ -605,6 +608,12 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 			add("修复", "升级内核后重启："+r.upgradeKernelCommand()+" && sudo reboot")
 		}
 		bins = nil
+	} else if len(bins) > 0 && r.fixNotInRepo(g) {
+		who := distroNames[r.distro]
+		if who == "" {
+			who = "发行版"
+		}
+		add("修复", fmt.Sprintf("修复版本 %s 已发布，但还没进你的软件源（apt 里能装到的最新版就是当前版本），现在升级不会有变化。%s 通常在下次小版本更新时发布它，届时运行：%s", g.target, who, r.upgradeCommand(bins)))
 	} else if len(bins) > 0 {
 		add("修复", r.upgradeCommand(bins))
 		add("验证", fmt.Sprintf("%s（应不低于 %s）", r.verifyCommand(bins), g.target))

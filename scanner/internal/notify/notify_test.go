@@ -146,7 +146,7 @@ func TestMessage(t *testing.T) {
 	// Codex's case: an overall "good" host, items that cannot be upgraded yet.
 	wait := []report.Alert{{Text: "caddy（有空时处理 · 对外服务 · 暂无新版可升级）", Priority: "P2", Waiting: true}}
 	msg = Message("kvm", "状态良好", "没有需要立即处理的漏洞", &Event{Kind: "new", New: wait, Open: wait}, "v")
-	for _, want := range []string{"🔵 kvm：新发现 1 个安全问题，都不紧急\n\n• caddy", "暂时没有新版本可升级，现在无需操作"} {
+	for _, want := range []string{"🔵 kvm：新发现 1 个安全问题，都不紧急\n\n• caddy", "暂时没有可升级的版本，现在无需操作"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing %q in\n%s", want, msg)
 		}

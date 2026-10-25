@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/version"
 )
 
 // The default view is a check-up list: one status line, then one row per
@@ -78,10 +79,34 @@ func (r *Report) noUpdate(g *pkgGroup) bool {
 	return true
 }
 
-// waiting tells whether nothing can be done about a program until its
-// author publishes a new release.
+// fixNotInRepo tells whether the distribution has published a fix for a
+// system package that the machine's repositories do not offer yet (for
+// example Debian's caddy 2.6.2-5+deb12u1, waiting for the next point
+// release): apt offers no newer version of any of its packages, so
+// upgrading changes nothing. Only trusted with fresh apt lists; kernels,
+// whose package names change with every update, are left out.
+func (r *Report) fixNotInRepo(g *pkgGroup) bool {
+	if g.l2 || !r.indexed || r.kind != version.Deb || hasKernel(g) || len(g.binaries) == 0 {
+		return false
+	}
+	for _, f := range g.findings {
+		if f.Fix != match.FixUpgrade {
+			return false
+		}
+	}
+	for _, b := range g.binaries {
+		if !r.installed[b] || r.upgrade[b] {
+			return false
+		}
+	}
+	return true
+}
+
+// waiting tells whether nothing can be done yet: a program waiting for its
+// author's release, or a system package whose fix has not reached the
+// machine's repositories.
 func (r *Report) waiting(g *pkgGroup) bool {
-	if r.noUpdate(g) {
+	if r.noUpdate(g) || r.fixNotInRepo(g) {
 		return true
 	}
 	return g.l2 && g.findings[0].Method != "package" && g.goProg && g.target == "" && !urgent(g)
@@ -127,10 +152,13 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 		}
 	}
 	items := len(fixable) + len(r.containersToFix())
-	waiting := 0
+	waiting, notInRepo := 0, 0
 	for _, g := range fixable {
 		if r.waiting(g) {
 			waiting++
+		}
+		if r.fixNotInRepo(g) {
+			notInRepo++
 		}
 	}
 	items -= waiting
@@ -151,9 +179,13 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 	case waitKEV > 0:
 		return cRed, "需要留意", fmt.Sprintf("%d 个程序的漏洞已被黑客实际利用，但还没有新版本可升级：关注作者发布，必要时先停止它对外服务", waitKEV)
 	case waitUrgent > 0:
-		return cYellow, "需要留意", fmt.Sprintf("%d 个程序有较严重的漏洞，但还没有新版本可升级，请关注作者发布", waitUrgent)
+		return cYellow, "需要留意", fmt.Sprintf("%d 项较严重的漏洞还没有可升级的版本（修复未发布，或还没进你的软件源），请留意更新", waitUrgent)
 	case items > 0:
 		return cGreen, "状态良好", fmt.Sprintf("没有需要立即处理的漏洞，有 %d 项建议更新", items)
+	case waiting > 0 && notInRepo == waiting:
+		return cGreen, "状态良好", fmt.Sprintf("没有需要你处理的问题，%d 个软件包的修复还没进你的软件源", waiting)
+	case waiting > 0 && notInRepo > 0:
+		return cGreen, "状态良好", fmt.Sprintf("没有需要你处理的问题，%d 项在等新版本发布或软件源更新", waiting)
 	case waiting > 0:
 		return cGreen, "状态良好", fmt.Sprintf("没有需要你处理的问题，%d 个程序在等作者发布新版", waiting)
 	case r.Summary.UnfixedNotable > 0:
@@ -209,13 +241,30 @@ func (r *Report) writeChecklist(t term) {
 	steps, ref, popup := r.fixSteps(fixable)
 
 	// System packages.
-	var l1, l2 []*pkgGroup
+	var l1, l1wait, l2 []*pkgGroup
 	for _, g := range fixable {
-		if g.l2 {
+		switch {
+		case g.l2:
 			l2 = append(l2, g)
-		} else {
+		case r.fixNotInRepo(g):
+			l1wait = append(l1wait, g)
+		default:
 			l1 = append(l1, g)
 		}
+	}
+	notInRepo := func() {
+		if len(l1wait) == 0 {
+			return
+		}
+		who := distroNames[r.OS.Distro]
+		if who == "" {
+			who = "发行版"
+		}
+		fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
+		block.paint(cDim, "等源更新")
+		fmt.Fprint(block, "  "+pkgNames(l1wait))
+		block.paint(cDim, "  修复已发布，还没进你的软件源，通常随 "+who+" 下次小版本更新到达，现在无需操作")
+		fmt.Fprintln(block)
 	}
 	if len(l1) == 0 {
 		text := fmt.Sprintf("%d 个都没有待修的漏洞", r.Summary.Packages)
@@ -265,6 +314,8 @@ func (r *Report) writeChecklist(t term) {
 			line("包括", cDim, rest)
 		}
 	}
+
+	notInRepo()
 
 	// Programs installed outside the distribution (third-party repositories,
 	// hand installs, Go programs).
@@ -468,7 +519,7 @@ func (r *Report) writeChecklist(t term) {
 	// Where to look next, and what the data was.
 	fmt.Fprintln(t)
 	example := "名称"
-	candidates := append(append([]*pkgGroup(nil), l1...), l2...)
+	candidates := append(append(append([]*pkgGroup(nil), l1...), l2...), l1wait...)
 	if len(candidates) == 0 {
 		candidates = r.group(func(f match.Finding) bool { return isUnfixed(f) && Notable(f) })
 	}

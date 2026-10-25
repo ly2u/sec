@@ -58,6 +58,11 @@ type Report struct {
 	only              string // --pkg: show one package in full
 	stalePackages     map[string]bool
 	noNewer           map[string]bool // third-party packages already at the repository's newest version
+	// From fresh apt lists: installed binary packages, and those the
+	// repositories offer a newer version of.
+	indexed   bool
+	installed map[string]bool
+	upgrade   map[string]bool
 	// Hostname of the scanned machine, shown in the report header.
 	Hostname string `json:"hostname,omitempty"`
 	// Update: a newer scanner release ("v0.1.4"), set by the caller.
@@ -144,9 +149,14 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 		kind: o.Kind, distro: o.Distro, showAll: showAll, stalePackages: map[string]bool{}, noNewer: map[string]bool{},
 	}
 	if inv.Indexed {
+		r.indexed, r.installed, r.upgrade = true, map[string]bool{}, map[string]bool{}
 		for _, p := range inv.Packages {
 			if p.Origin == system.ThirdParty && p.Newer == "" {
 				r.noNewer[p.Name] = true
+			}
+			r.installed[p.Name] = true
+			if p.Newer != "" {
+				r.upgrade[p.Name] = true
 			}
 		}
 	}

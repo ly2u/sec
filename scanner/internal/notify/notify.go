@@ -368,9 +368,9 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 	b.WriteString("\n")
 	if waiting > 0 {
 		if waiting == len(items) {
-			b.WriteString("这些程序暂时没有新版本可升级，现在无需操作；作者发布新版后，再次检查会提示升级。\n")
+			b.WriteString("这些问题暂时没有可升级的版本，现在无需操作；有新版本后，再次检查会提示升级。\n")
 		} else {
-			b.WriteString("标“暂无新版可升级”的现在无法修复，等作者发布新版后再次检查会提示升级。\n")
+			b.WriteString("标“暂无新版可升级”或“修复还没进软件源”的现在无需操作，有新版本后再次检查会提示升级。\n")
 		}
 	}
 	if waiting < len(items) {

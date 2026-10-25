@@ -38,7 +38,10 @@ func (r *Report) Topics() []Topic {
 			parts = append(parts, "对外服务")
 		}
 		parts = append(parts, fmt.Sprintf("%d 个漏洞", vulnCount(g)), priorityLabel[g.priority])
-		if r.waiting(g) {
+		switch {
+		case r.fixNotInRepo(g):
+			parts = append(parts, "修复还没进软件源")
+		case r.waiting(g):
 			parts = append(parts, "暂无新版可升级")
 		}
 		out = append(out, Topic{Name: g.pkg, Detail: strings.Join(parts, " · ")})

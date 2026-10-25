@@ -214,7 +214,7 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 
 - **只有 `secwatch schedule` 会改动系统**，并且只在用户运行时：写 `/etc/secwatch/notify.json`（root 所有、600 权限，含 Bot Token；权限过宽时拒绝读取）和 systemd 的 `secwatch.service`/`secwatch.timer`。`--remove` 停用并删除全部文件与通知记录。没有 systemd 的系统只保存配置，并打印一行 crontab 让用户自己添加。`secwatch scan` 本身依然什么都不写。不带参数运行 `secwatch` 打开的菜单（仅交互终端）只是这些命令的入口：开启/修改/关闭都走同一套 `schedule` 逻辑，修改时以当前设置为默认值，同样先发测试消息再保存。
 - **开启前先发测试消息**，发送失败则不写任何文件。Token 不出现在命令行参数（会进进程列表），交互输入或用环境变量 `SECWATCH_TELEGRAM_TOKEN`；错误信息中会抹去 Token。
-- **定时运行**：`scan --notify`，间隔最短 30 分钟（数据包最多每小时更新），`RandomizedDelaySec` 错开各服务器的请求。服务单元启用 `ProtectSystem=strict`、`ProtectHome=read-only`、`NoNewPrivileges`：除缓存与状态目录外整个文件系统只读，用 systemd 强制兑现“扫描只读”。退出码 3 视为成功。
+- **定时运行**：`scan --notify`，间隔以小时为单位，最少 0.5 小时（数据包最多每小时更新；命令行也接受 30m、1d 这种写法），`RandomizedDelaySec` 错开各服务器的请求。服务单元启用 `ProtectSystem=strict`、`ProtectHome=read-only`、`NoNewPrivileges`：除缓存与状态目录外整个文件系统只读，用 systemd 强制兑现“扫描只读”。退出码 3 视为成功。
 - **何时通知**：达到所选级别（P0/P1/P2，默认 P1）或已被在野利用的项目。新问题立即通知；未修复的每 24 小时最多提醒一次；全部修复后通知“已恢复”。去重记录在 `/var/lib/secwatch/notify-state.json`；发送失败时不更新记录，下次运行重试。
 - **发什么**：纯文本短消息——主机名、一行结论、新增/未处理的软件包名称与级别、查看详情的命令。不发软件清单或版本全集。只发往用户配置的渠道，从不发往 SecWatch 服务器；从不自动修复。Webhook 收到同内容的 JSON。
 - 国内机器可用 `--telegram-api` 指定自建的 Telegram API 反代（必须 https）。

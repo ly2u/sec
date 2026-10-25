@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ var safeExe = regexp.MustCompile(`^/[A-Za-z0-9._+/-]{1,200}$`)
 func schedule(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("schedule", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	every := fs.String("every", "1h", "")
+	every := fs.String("every", "1", "")
 	level := fs.String("notify-on", "P1", "")
 	chat := fs.String("telegram-chat", "", "")
 	api := fs.String("telegram-api", "", "")
@@ -208,13 +209,13 @@ func (s *scheduler) sendTest(c *notify.Config, headline string) error {
 // configure asks for every setting, offering the current ones (cur may be
 // nil) as defaults, and returns the new configuration.
 func (s *scheduler) configure(cur *notify.Config) (*notify.Config, bool) {
-	c := &notify.Config{Every: "1h", NotifyOn: "P1"}
+	c := &notify.Config{Every: "1", NotifyOn: "P1"}
 	if cur != nil {
 		c.Every, c.NotifyOn = cur.Every, cur.NotifyOn
 	}
 	for {
 		d, _ := notify.ParseEvery(c.Every)
-		a, ok := s.prompt(fmt.Sprintf("检查间隔（例如 30m、2h、1d，最短 30m；回车保持 %s）：", humanEvery(d)))
+		a, ok := s.prompt(fmt.Sprintf("每隔几小时检查一次？单位：小时，最少 0.5（例如 0.5、1、6、24）；回车保持 %s：", humanEvery(d)))
 		if !ok {
 			return nil, false
 		}
@@ -371,14 +372,13 @@ func writeFile(p, content string) error {
 	return os.WriteFile(p, []byte(content), 0o644)
 }
 
+// humanEvery shows an interval in hours ("0.5 小时", "6 小时"), or days
+// for whole days of two or more.
 func humanEvery(d time.Duration) string {
-	switch {
-	case d%(24*time.Hour) == 0:
+	if d >= 48*time.Hour && d%(24*time.Hour) == 0 {
 		return fmt.Sprintf("%d 天", d/(24*time.Hour))
-	case d%time.Hour == 0:
-		return fmt.Sprintf("%d 小时", d/time.Hour)
 	}
-	return fmt.Sprintf("%d 分钟", d/time.Minute)
+	return strconv.FormatFloat(d.Hours(), 'f', -1, 64) + " 小时"
 }
 
 // cronSpec approximates the interval for systems without systemd.

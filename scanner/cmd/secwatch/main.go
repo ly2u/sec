@@ -67,7 +67,7 @@ scan 选项：
   --no-cache               不读写本地缓存（~/.cache/secwatch）
 
 schedule 选项：
-  --every 1h               检查间隔，最短 30m（例如 30m、6h、1d），默认 1h
+  --every 1                检查间隔，单位小时，最少 0.5（例如 0.5、6、24），默认 1
   --notify-on P1           达到该级别（或有漏洞已被在野利用）时通知：P0、P1、P2，默认 P1
   --telegram-chat ID       Telegram Chat ID；Token 交互输入，或用环境变量 SECWATCH_TELEGRAM_TOKEN
   --telegram-api URL       自建的 Telegram API 反代（https），国内机器可用

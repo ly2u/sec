@@ -18,7 +18,7 @@ func testMenu(t *testing.T, answers string, root bool) (*menu, *fakeSystem, *str
 // Turn the scheduled check on from the menu, test it, then turn it off.
 func TestMenuScheduleLifecycle(t *testing.T) {
 	answers := "3\n" + // turn on
-		"30m\n\n" + // every 30 minutes, default level
+		"0.5\n\n" + // every half an hour, default level
 		testToken + "\n42\n\n" + // Telegram, direct API
 		"\n" + // no webhook
 		"\n" + // back to the menu
@@ -32,7 +32,7 @@ func TestMenuScheduleLifecycle(t *testing.T) {
 	o := out.String()
 	for _, want := range []string{
 		"定时检查  未开启", "3  开启定时检查与通知",
-		"定时检查  已开启 · 每 30 分钟 · Telegram · 尽快处理及以上", "5  关闭定时检查",
+		"定时检查  已开启 · 每 0.5 小时 · Telegram · 尽快处理及以上", "5  关闭定时检查",
 		"测试通知已发送", "已关闭定时检查",
 	} {
 		if !strings.Contains(o, want) {

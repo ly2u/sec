@@ -32,7 +32,7 @@ sha256sum -c --ignore-missing SHA256SUMS</code></pre>
 <h3>定时检查与通知</h3>
 <p>想让它自己定期检查、有新问题时提醒你？运行 <code>sudo secwatch</code> 打开菜单选 3，或者直接：</p>
 <div class="codebox"><button type="button" class="copy" data-copy="sudo secwatch schedule" hidden>复制</button><pre><code>sudo secwatch schedule</code></pre></div>
-<p>按提示填入 Telegram 机器人（或 Webhook 地址），它会先发一条测试消息，确认收到后才开启。默认每小时检查一次（最短 30 分钟），出现“尽快处理”及以上、或已被在野利用的<strong>新问题</strong>时立即通知；没修好的每天最多提醒一次，修好后通知“已恢复”。消息只发到你自己的渠道，不经过本站；只提醒，不会自动修复。国内机器连不上 Telegram 时，可以用 <code>--telegram-api</code> 指定自建反代。查看状态：<code>sudo secwatch schedule --status</code>；关闭并删除全部配置：<code>sudo secwatch schedule --remove</code>。</p>
+<p>按提示填入 Telegram 机器人（或 Webhook 地址），它会先发一条测试消息，确认收到后才开启。默认每 1 小时检查一次（最少 0.5 小时），出现“尽快处理”及以上、或已被在野利用的<strong>新问题</strong>时立即通知；没修好的每天最多提醒一次，修好后通知“已恢复”。消息只发到你自己的渠道，不经过本站；只提醒，不会自动修复。国内机器连不上 Telegram 时，可以用 <code>--telegram-api</code> 指定自建反代。查看状态：<code>sudo secwatch schedule --status</code>；关闭并删除全部配置：<code>sudo secwatch schedule --remove</code>。</p>
 
 <h2>使用</h2>
 <pre><code>sudo secwatch scan                 # 一屏看完：结论、要处理的软件包、修复命令

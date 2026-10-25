@@ -43,7 +43,7 @@ func TestScheduleInstallInteractive(t *testing.T) {
 	if err := s.install(&notify.Config{Every: "30m", NotifyOn: "P1"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.sent) != 1 || f.sent[0].Kind != "test" || !strings.Contains(f.sent[0].Text, "每 30 分钟检查一次") {
+	if len(f.sent) != 1 || f.sent[0].Kind != "test" || !strings.Contains(f.sent[0].Text, "每 0.5 小时检查一次") {
 		t.Fatalf("a test message comes first: %+v", f.sent)
 	}
 	st, err := os.Stat(s.path(configFile))

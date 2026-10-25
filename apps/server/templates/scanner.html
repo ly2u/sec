@@ -77,8 +77,8 @@ sudo lysec scan --format json   # 给脚本和监控用</code></pre>
 </div>
 
 <h3>退出码</h3>
-<p>便于放进 cron 或监控：<code>0</code> 没有紧急问题；<code>3</code> 有可处理的 P0/P1 问题或已被在野利用的漏洞；<code>1</code> 扫描失败；<code>2</code> 参数错误。</p>
-<pre><code># 每天 8 点检查，有紧急问题时写日志
+<p>想要定时检查并收到 Telegram 通知，用上面的 <code>sudo lysec</code> 菜单即可；退出码便于接入你自己的脚本或监控：<code>0</code> 没有紧急问题；<code>3</code> 有可处理的 P0/P1 问题或已被在野利用的漏洞；<code>1</code> 扫描失败；<code>2</code> 参数错误。</p>
+<pre><code># 自己写 cron 的例子：每天 8 点检查，有紧急问题时写日志
 0 8 * * * /usr/local/bin/secwatch scan &gt; /var/log/secwatch.txt 2&gt;&amp;1; [ $? -eq 3 ] &amp;&amp; logger -t secwatch "发现需要立即处理的漏洞"</code></pre>
 
 <h2>支持范围</h2>

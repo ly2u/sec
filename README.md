@@ -49,7 +49,7 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
 
 | 命令 | 作用 |
 |---|---|
-| `sudo lysec` | 打开菜单：立即检查、查看详情、开启/修改/关闭定时检查与通知 |
+| `sudo lysec` | 打开菜单：立即检查、查看详情、开启/修改/关闭定时检查与通知、检查更新 |
 | `sudo lysec scan` | 体检清单（建议以 root 运行，才能检查容器和对外服务） |
 | `lysec scan --pkg caddy` | 只看一个软件包或程序：漏洞、所需版本和完整修复命令 |
 | `lysec scan --container NAME` | 只看一个容器 |

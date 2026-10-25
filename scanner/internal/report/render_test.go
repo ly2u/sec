@@ -158,7 +158,7 @@ func TestCleanHostHasNoNextSteps(t *testing.T) {
 	o := system.OS{PrettyName: "Debian GNU/Linux 13 (trixie)", Distro: "debian", Release: "13", Kind: version.Deb}
 	r := Build("v0.1.1", o, &system.Inventory{}, match.Result{PackagesScanned: 352}, nil, DataInfo{KeyID: "D7B7CA69ADC798BC"}, nil, false, nil, nil)
 	out := render(r)
-	if !strings.Contains(out, "● 状态良好  没有发现需要处理的安全问题") || !strings.Contains(out, "系统软件包  ✓ 352 个都是最新") || strings.Contains(out, "建议这样做") {
+	if !strings.Contains(out, "● 状态良好  没有发现需要处理的安全问题") || !strings.Contains(out, "系统软件包  ✓ 352 个都没有待修的漏洞") || strings.Contains(out, "建议这样做") {
 		t.Errorf("clean host:\n%s", out)
 	}
 }

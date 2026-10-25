@@ -218,7 +218,16 @@ func (r *Report) writeChecklist(t term) {
 		}
 	}
 	if len(l1) == 0 {
-		r.row(block, "系统软件包", "✓", cGreen, fmt.Sprintf("%d 个都是最新", r.Summary.Packages))
+		text := fmt.Sprintf("%d 个都没有待修的漏洞", r.Summary.Packages)
+		// Programs from third-party repositories are apt packages too and
+		// are judged under 程序: say so, or "all fine" reads as a contradiction.
+		for _, g := range l2 {
+			if g.findings[0].Method == "package" {
+				text = fmt.Sprintf("共 %d 个，官方源的都没有待修的漏洞（第三方源装的见“程序”）", r.Summary.Packages)
+				break
+			}
+		}
+		r.row(block, "系统软件包", "✓", cGreen, text)
 	} else {
 		var now, soon, rest []*pkgGroup
 		for _, g := range l1 {

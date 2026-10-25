@@ -240,6 +240,15 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 	if s := reasons(g); s != "" {
 		fmt.Fprintf(t, "  风险  %s\n", s)
 	}
+	// A 9.8 next to "有空时处理" needs saying why, right here.
+	bundledOnly := true
+	for _, f := range g.findings {
+		bundledOnly = bundledOnly && f.Component != ""
+	}
+	if bundledOnly && !urgent(g) {
+		t.paint(cDim, fmt.Sprintf("        评分是漏洞本身的严重程度；漏洞都在程序内置的组件里，程序是否用到出问题的代码还不确定（可能受影响），所以排在“%s”", priorityLabel[g.priority]))
+		fmt.Fprintln(t)
+	}
 	where := f.Path + "（Go 程序"
 	if f.Unit != "" {
 		where += "，服务 " + f.Unit
@@ -324,10 +333,6 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 		onlyBundled = onlyBundled && !c.own
 	}
 	fmt.Fprintln(t)
-	if onlyBundled {
-		t.paint(cDim, "  说明：漏洞都在内置组件中，能否被利用取决于程序是否用到相关功能，所以标为“可能受影响”。")
-		fmt.Fprintln(t)
-	}
 	if r.showAll {
 		r.writeVulnList(t, all, fmt.Sprintf("全部漏洞 %d 个", total))
 	} else {

@@ -24,7 +24,7 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def asset(name):
     data = (HERE / "static" / name).read_bytes()
     return data, hashlib.sha256(data).hexdigest()[:12]
@@ -71,7 +71,7 @@ def _ago(value):
 
 templates.env.filters["ago"] = _ago
 templates.env.globals["css_version"] = lambda: stylesheet()[1]
-templates.env.globals["js_version"] = lambda: asset("copy.js")[1]
+templates.env.globals["js_version"] = lambda: asset("site.js")[1]
 templates.env.globals["site_url"] = SITE_URL
 
 
@@ -81,9 +81,11 @@ def render(request, name, context, status=200, cache=PAGE_CACHE):
     return response
 
 
+# copy.js is the old name: pages cached before the rename still reference it.
+@router.get("/static/site.js")
 @router.get("/static/copy.js")
-def copy_script():
-    data, _ = asset("copy.js")
+def site_script():
+    data, _ = asset("site.js")
     return Response(
         data,
         media_type="text/javascript",

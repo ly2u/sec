@@ -213,11 +213,9 @@ def test_pages_are_light_static_and_cacheable(client, path):
     csp = response.headers["content-security-policy"]
     assert "default-src 'none'" in csp and "script-src 'self';" in csp
     assert "unsafe-inline" not in csp
-    # The only script is our own copy-button file; no inline code, no external resources.
+    # The only script is our own site.js; no inline code, no external resources.
     scripts = re.findall(r"<script\b[^>]*>", html, re.I)
-    assert len(scripts) == 1 and re.match(
-        r'<script src="/static/copy\.js\?v=\w+" defer>', scripts[0]
-    )
+    assert len(scripts) == 1 and re.match(r'<script src="/static/site\.js\?v=\w+">', scripts[0])
     assert "</script>" in html and html.count("<script") == 1
     assert not re.search(r"\son[a-z]+=", html)  # no inline event handlers
     assert not re.search(r'\ssrc="(?:https?:)?//', html)
@@ -272,7 +270,7 @@ def test_lookup_is_exact(client, query, status, location):
     else:
         assert (
             response.text.count("<script") == 1
-        )  # only our copy.js; input never reflected as markup
+        )  # only our site.js; input never reflected as markup
 
 
 def test_product_pages(client):
@@ -380,7 +378,7 @@ def test_copy_buttons_are_progressive(client):
         'data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo secwatch scan" hidden'
         in html
     )
-    script = client.get("/static/copy.js")
+    script = client.get("/static/site.js")
     assert script.status_code == 200 and script.headers["content-type"].startswith(
         "text/javascript"
     )
@@ -395,4 +393,17 @@ def test_easter_egg_contact(client):
     assert "io@u2ly.com" in page.text and "彩蛋" in page.text  # in the page source only
     humans = client.get("/humans.txt")
     assert humans.status_code == 200 and "io@u2ly.com" in humans.text
-    assert "io@u2ly.com" in client.get("/static/copy.js").text
+    assert "io@u2ly.com" in client.get("/static/site.js").text
+
+
+def test_light_theme_available(client):
+    page = client.get("/")
+    assert 'href="/static/site.css' in page.text and "/static/site.js?v=" in page.text
+    assert "data-theme-toggle" in page.text and 'content="dark light"' in page.text
+    css = client.get("/static/site.css").text
+    assert "prefers-color-scheme: light" in css and ':root[data-theme="light"]' in css
+    js = client.get("/static/site.js")
+    assert js.status_code == 200 and "localStorage" in js.text
+    assert client.get("/static/copy.js").text == js.text  # old name for cached pages
+    # Still no inline scripts or styles (CSP).
+    assert "<script>" not in page.text and "style=" not in page.text

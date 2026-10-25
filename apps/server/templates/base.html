@@ -6,8 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}LY2U SecWatch｜服务器漏洞情报与一键自检{% endblock %}</title>
 <meta name="description" content="{% block description %}实时汇总 CVE、在野利用（CISA KEV）与各 Linux 发行版修复状态；一条命令只读检查你的 VPS 是否受影响。{% endblock %}">
-<meta name="theme-color" content="#0a1220">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a1220" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)">
+<meta name="color-scheme" content="dark light">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta property="og:site_name" content="LY2U SecWatch">
 <meta property="og:title" content="{{ self.title() }}">
@@ -15,7 +16,7 @@
 <meta property="og:type" content="website">
 <link rel="stylesheet" href="/static/site.css?v={{ css_version() }}">
 <link rel="alternate" type="application/rss+xml" title="LY2U SecWatch" href="/rss.xml">
-<script src="/static/copy.js?v={{ js_version() }}" defer></script>
+<script src="/static/site.js?v={{ js_version() }}"></script>
 </head>
 <body>
 <header class="band">
@@ -28,6 +29,7 @@
       <a href="/scanner"{% if here == '/scanner' %} aria-current="page"{% endif %}>扫描器</a>
       <a href="/about"{% if here == '/about' %} aria-current="page"{% endif %}>关于</a>
     </nav>
+    <button type="button" class="theme-toggle" data-theme-toggle hidden>浅色</button>
     {% block lookup %}
     <form class="lookup lookup-top" action="/go" method="get" role="search">
       <input type="text" name="id" placeholder="CVE-2024-3094" maxlength="64" autocomplete="off" spellcheck="false" aria-label="漏洞编号">

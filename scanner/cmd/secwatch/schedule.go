@@ -196,8 +196,13 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 	if out, err := s.run("daemon-reload"); err != nil {
 		return fmt.Errorf("systemctl daemon-reload 失败：%v %s", err, out)
 	}
-	if out, err := s.run("enable", "--now", unitName+".timer"); err != nil {
+	if out, err := s.run("enable", unitName+".timer"); err != nil {
 		return fmt.Errorf("启用定时器失败：%v %s", err, out)
+	}
+	// restart, not start: when the timer is already running (settings
+	// changed), only a restart applies the new interval.
+	if out, err := s.run("restart", unitName+".timer"); err != nil {
+		return fmt.Errorf("启动定时器失败：%v %s", err, out)
 	}
 	fmt.Fprintf(s.out, `已开启：每 %s检查一次，出现「%s」及以上的新问题时通知。
   查看状态   sudo secwatch schedule --status

@@ -307,7 +307,9 @@ func (idx *aptIndex) addList(h Host, name string) {
 }
 
 // FreshLists is how old the apt lists may be for "no newer version in the
-// repository" to be believed; Debian's apt-daily refreshes them every day.
+// repository" to be believed. They are refreshed by apt-get update, and
+// daily only where APT::Periodic is set (unattended-upgrades); with older
+// lists the report falls back to the upgrade command, which updates first.
 const FreshLists = 7 * 24 * time.Hour
 
 // newer returns the newest version the apt lists offer above p's, if any.

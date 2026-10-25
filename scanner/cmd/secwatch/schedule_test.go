@@ -65,7 +65,7 @@ func TestScheduleInstallInteractive(t *testing.T) {
 	if !strings.Contains(string(timer), "OnUnitActiveSec=7200s") || !strings.Contains(string(timer), "RandomizedDelaySec") {
 		t.Errorf("timer:\n%s", timer)
 	}
-	if strings.Join(f.calls, "|") != "daemon-reload|enable --now secwatch.timer" {
+	if strings.Join(f.calls, "|") != "daemon-reload|enable secwatch.timer|restart secwatch.timer" {
 		t.Errorf("systemctl calls: %v", f.calls)
 	}
 	if !strings.Contains(out.String(), "sudo secwatch schedule --remove") {

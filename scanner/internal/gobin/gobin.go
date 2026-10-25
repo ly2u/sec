@@ -348,12 +348,24 @@ func DebFiles(h system.Host, pkgs []string) []string {
 // from the distribution (whose own data already covers it).
 type Owner func(path string) (pkg string, official bool)
 
-// Collect inspects candidates, skipping files owned by official packages and
-// duplicates (the same file seen running and on disk).
+// backupName matches copies people keep next to a program before replacing
+// it (komari.bak-20261025, agent.backup.20261001_220332, frpc.old, caddy~);
+// lysec's own replacement steps make the .bak-DATE ones.
+var backupName = regexp.MustCompile(`(?i)(\.(bak|backup|old|orig|prev|save|dpkg-old|dpkg-dist)([._-][A-Za-z0-9._-]*)?|~)$`)
+
+// IsBackup tells whether a file name looks like such a backup copy.
+func IsBackup(path string) bool { return backupName.MatchString(filepath.Base(path)) }
+
+// Collect inspects candidates, skipping files owned by official packages,
+// backup copies that are not running, and duplicates (the same file seen
+// running and on disk).
 func Collect(cands []Candidate, owner Owner) []Program {
 	byPath := map[string]int{}
 	var out []Program
 	for _, c := range cands {
+		if !c.Running && IsBackup(c.Path) {
+			continue // a stored copy, not a program in use
+		}
 		if i, ok := byPath[c.Path]; ok {
 			if i >= 0 {
 				out[i].Running = out[i].Running || c.Running

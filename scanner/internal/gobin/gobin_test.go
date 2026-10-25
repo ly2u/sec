@@ -200,3 +200,31 @@ func TestHostProcessesKeepSandboxedServices(t *testing.T) {
 		t.Fatalf("sandboxed service kept with its unit, container process left to the container scan: %+v", got)
 	}
 }
+
+// Backup copies kept next to a program are not programs in use, unless one
+// is actually running.
+func TestCollectSkipsIdleBackups(t *testing.T) {
+	for _, name := range []string{"komari.backup.20261001_220332", "komari.bak-20261025", "frpc.old", "caddy~", "agent.BAK", "x.dpkg-old", "app.orig"} {
+		if !IsBackup("/opt/komari/" + name) {
+			t.Errorf("%s is a backup", name)
+		}
+	}
+	for _, name := range []string{"komari", "komari-agent", "bakery", "goldfish", "oldtimer", "backup-server", "restic"} {
+		if IsBackup("/opt/x/" + name) {
+			t.Errorf("%s is a program", name)
+		}
+	}
+	dir := t.TempDir()
+	exe, _ := os.Executable()
+	data, _ := os.ReadFile(exe)
+	open := filepath.Join(dir, "bin")
+	os.WriteFile(open, data, 0o755)
+	got := Collect([]Candidate{
+		{Open: open, Path: "/opt/komari/komari"},
+		{Open: open, Path: "/opt/komari/komari.bak-20261025"},
+		{Open: open, Path: "/opt/komari/agent.old", Running: true},
+	}, nil)
+	if len(got) != 2 || got[0].Path != "/opt/komari/agent.old" || got[1].Path != "/opt/komari/komari" {
+		t.Fatalf("%+v", got)
+	}
+}

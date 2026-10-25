@@ -19,12 +19,12 @@
   <section class="term" aria-label="一条命令检查整台机器">
     <div class="term-head">
       <span>一条命令检查整台机器</span>
-      <button type="button" class="copy" data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo secwatch scan" hidden>复制命令</button>
+      <button type="button" class="copy" data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo lysec scan" hidden>复制命令</button>
     </div>
     <div class="term-body">
 <pre><code><span class="pr">$</span> curl -fsSL https://sec.ly2u.com/install.sh | sh
 <span class="ok">签名有效：SecWatch 发布密钥 C7A3F417E9543893</span>
-<span class="pr">$</span> sudo secwatch scan
+<span class="pr">$</span> sudo lysec scan
 <span class="ok">● 状态良好</span>  没有发现需要处理的安全问题<span class="cursor" aria-hidden="true"></span></code></pre>
       <ul class="term-points">
         <li><b>只读</b>不改系统，不执行任何修复命令</li>

@@ -130,7 +130,7 @@ func TestMessage(t *testing.T) {
 	msg := Message("racknerd", "有紧急问题", "1 个软件包的漏洞已被黑客实际利用，请今天处理",
 		&Event{Kind: "new", New: []report.Alert{ssh}, Open: []report.Alert{ssh, curl}}, "v0.1.7")
 	for _, want := range []string{
-		"🔴 racknerd：新发现 1 项需要关注\n整体结论：有紧急问题，1 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"🔴 racknerd：新发现 1 个安全问题，其中 1 个需要立即处理\n整体结论：有紧急问题，1 个软件包的漏洞已被黑客实际利用，请今天处理",
 		"• openssh（立即处理 · 已被在野利用）", "另有 1 项之前提醒过、尚未处理",
 		"怎么处理：登录服务器运行 sudo secwatch scan", "只提醒，不会自动修复",
 	} {
@@ -144,9 +144,9 @@ func TestMessage(t *testing.T) {
 	t.Log("\n" + msg)
 
 	// Codex's case: an overall "good" host, items that cannot be upgraded yet.
-	wait := []report.Alert{{Text: "caddy（计划处理 · 对外服务 · 暂无新版可升级）", Priority: "P2", Waiting: true}}
+	wait := []report.Alert{{Text: "caddy（有空时处理 · 对外服务 · 暂无新版可升级）", Priority: "P2", Waiting: true}}
 	msg = Message("kvm", "状态良好", "没有需要立即处理的漏洞", &Event{Kind: "new", New: wait, Open: wait}, "v")
-	for _, want := range []string{"🔵 kvm：新发现 1 项需要关注", "整体结论：状态良好", "暂时没有新版本可升级，现在无需操作"} {
+	for _, want := range []string{"🔵 kvm：新发现 1 个安全问题，都不紧急\n\n• caddy", "暂时没有新版本可升级，现在无需操作"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing %q in\n%s", want, msg)
 		}

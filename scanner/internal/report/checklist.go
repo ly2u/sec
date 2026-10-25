@@ -306,7 +306,7 @@ func (r *Report) writeChecklist(t term) {
 		for i, g := range l2 {
 			if i == maxProgRows {
 				fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
-				block.paint(cDim, fmt.Sprintf("其余 %d 个：secwatch scan --all", len(l2)-maxProgRows))
+				block.paint(cDim, fmt.Sprintf("其余 %d 个：%s scan --all", len(l2)-maxProgRows, Cmd))
 				fmt.Fprintln(block)
 				break
 			}
@@ -468,7 +468,7 @@ func (r *Report) writeChecklist(t term) {
 			example = a
 		}
 	}
-	prefix := "secwatch scan "
+	prefix := Cmd + " scan "
 	if r.inContainer != nil {
 		prefix += "--container " + r.inContainer.Label() + " "
 	}
@@ -479,7 +479,7 @@ func (r *Report) writeChecklist(t term) {
 	fmt.Fprintln(t)
 	if r.MenuHint && r.inContainer == nil {
 		t.paint(cDim, " 定时提醒  ")
-		t.paint(cCmd, "sudo secwatch")
+		t.paint(cCmd, "sudo "+Cmd)
 		t.paint(cDim, "  打开菜单，可开启定时检查，有新问题时发到你的 Telegram")
 		fmt.Fprintln(t)
 	}

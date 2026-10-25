@@ -315,25 +315,46 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 		return b.String()
 	}
 	items := ev.New
-	head := fmt.Sprintf("新发现 %d 项需要关注", len(ev.New))
+	head := fmt.Sprintf("新发现 %d 个安全问题", len(ev.New))
 	if ev.Kind == "reminder" {
 		items = ev.Open
-		head = fmt.Sprintf("仍有 %d 项尚未处理（每天提醒一次）", len(ev.Open))
+		head = fmt.Sprintf("仍有 %d 个安全问题没有处理", len(ev.Open))
 	}
 	icon := "🔵"
-	waiting := 0
+	waiting, now, soon := 0, 0, 0
 	for _, a := range items {
 		switch {
 		case a.KEV || a.Priority == "P0":
 			icon = "🔴"
-		case a.Priority == "P1" && icon != "🔴":
-			icon = "🟡"
+			now++
+		case a.Priority == "P1":
+			if icon != "🔴" {
+				icon = "🟡"
+			}
+			soon++
 		}
 		if a.Waiting {
 			waiting++
 		}
 	}
-	fmt.Fprintf(&b, "%s %s：%s\n整体结论：%s，%s\n\n", icon, host, head, title, verdict)
+	// Say at once how pressing it is, so a calm host verdict does not read
+	// as a contradiction.
+	switch {
+	case now > 0:
+		head += fmt.Sprintf("，其中 %d 个需要立即处理", now)
+	case soon > 0:
+		head += fmt.Sprintf("，其中 %d 个建议尽快处理", soon)
+	default:
+		head += "，都不紧急"
+	}
+	if ev.Kind == "reminder" {
+		head += "（每天提醒一次）"
+	}
+	fmt.Fprintf(&b, "%s %s：%s\n", icon, host, head)
+	if title != "状态良好" {
+		fmt.Fprintf(&b, "整体结论：%s，%s\n", title, verdict)
+	}
+	b.WriteString("\n")
 	for i, a := range items {
 		if i == 8 {
 			fmt.Fprintf(&b, "…… 共 %d 项\n", len(items))
@@ -353,7 +374,7 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 		}
 	}
 	if waiting < len(items) {
-		b.WriteString("怎么处理：登录服务器运行 sudo secwatch scan 查看报告，按“建议这样做”里的命令操作。\n")
+		b.WriteString("怎么处理：登录服务器运行 sudo " + report.Cmd + " scan 查看报告，按“建议这样做”里的命令操作。\n")
 	}
 	fmt.Fprintf(&b, "— LY2U SecWatch %s · 只提醒，不会自动修复", version)
 	return b.String()

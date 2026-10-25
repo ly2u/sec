@@ -43,6 +43,20 @@ for mode in minisign openssl; do
   fi
   if install_from "$DIST" "$mode" && [ "$("$WORK/bin/secwatch" version)" = "secwatch $VERSION" ]; then
     ok "$mode: installs a correctly signed release"
+    if [ "$(readlink "$WORK/bin/lysec")" = secwatch ] && grep -q "lysec" "$WORK/out.txt"; then
+      ok "$mode: short command lysec"
+    else
+      bad "$mode: no lysec link: $(tr '\n' ' ' <"$WORK/out.txt")"
+    fi
+    # Installing again keeps our link; another program's lysec is never replaced.
+    rm "$WORK/bin/lysec" && printf 'other\n' >"$WORK/bin/lysec"
+    env SECWATCH_DOWNLOAD_BASE="file://$DIST" SECWATCH_INSTALL_DIR="$WORK/bin" SECWATCH_VERIFY="$mode" \
+      sh "$INSTALLER" >"$WORK/out.txt" 2>&1
+    if [ "$(cat "$WORK/bin/lysec")" = other ] && grep -q "已被其他程序占用" "$WORK/out.txt"; then
+      ok "$mode: leaves another lysec alone"
+    else
+      bad "$mode: replaced another lysec"
+    fi
   else
     bad "$mode: valid release rejected: $(tr '\n' ' ' <"$WORK/out.txt")"
   fi

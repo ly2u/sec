@@ -223,9 +223,14 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 - **检查失败不能悄无声息**：定时检查没能完成（拿不到数据等）时记入通知记录（菜单的“上次检查”显示“检查未完成”）；连续失败满 24 小时发一条提醒，只发一次，下次成功后重新计时。
 - 国内机器可用 `--telegram-api` 指定自建的 Telegram API 反代（必须 https）。
 
+### 短命令与菜单更新（已实现，站长决定 2026-10-25）
+
+- **短命令 `lysec`**（LY2U + sec）：`secwatch` 太长不好记。安装脚本和 `update` 在程序所在目录创建符号链接 `lysec → secwatch`；该目录已有同名文件或 PATH 中已有 `lysec` 时不创建、不覆盖（没有用 `sec`：Debian 的 Simple Event Correlator 就叫 `sec`）。程序判断自己是否以 `lysec` 运行、或同目录的 `lysec` 是否指向自己，所有提示的命令随之使用 `lysec`，否则用 `secwatch`。
+- **更新**：`secwatch update` 与菜单中的“检查更新/更新到 vX”。用内置的发布公钥（与 install.sh、`keys/release-signing.pub` 相同，测试比对）校验 `SHA256SUMS.minisig`（含签名说明 `secwatch release=vX file=SHA256SUMS`），再核对程序的 SHA-256，并在替换前运行新程序的 `version` 确认可运行，最后在同目录原子 rename；任何失败都不改动文件。开发版本不更新。完成后打印退回旧版本的命令。只在用户要求时运行，从不自动更新。
+
 ### 新版本提示（已实现）
 
-worker 每 15 分钟读取 GitHub 最新正式版本（发布后最长约 15 分钟加 Cloudflare 缓存 1 分钟才会提示）（只接受 `vX.Y.Z`，忽略草稿和预发布），写入 `manifest.json` 的 `scanner.latest`。这个字段不计入数据包指纹，发布新版本不会重建数据包。扫描器每次扫描本来就要读取 manifest，较新时在报告最后提示一行安装命令。manifest 尚未签名，所以这个字段只用作提示：扫描器**从不自动更新**，用户运行的安装脚本仍会校验发布签名。v0.1.3 及以前的版本不认识这个字段，不会提示。
+worker 每 15 分钟读取 GitHub 最新正式版本（发布后最长约 15 分钟加 Cloudflare 缓存 1 分钟才会提示）（只接受 `vX.Y.Z`，忽略草稿和预发布），写入 `manifest.json` 的 `scanner.latest`。这个字段不计入数据包指纹，发布新版本不会重建数据包。扫描器每次扫描本来就要读取 manifest，较新时在报告最后提示一行更新命令（`sudo lysec update`）。manifest 尚未签名，所以这个字段只用作提示：扫描器**从不自动更新**，用户运行的 `update` 或安装脚本都会独立校验发布签名，不依赖 manifest。v0.1.3 及以前的版本不认识这个字段，不会提示。
 
 ---
 
@@ -237,7 +242,7 @@ worker 每 15 分钟读取 GitHub 最新正式版本（发布后最长约 15 分
 |---|---|
 | **P0 立即处理** | 在 KEV 中；或 CVSS ≥ 9.0 且服务对公网监听 |
 | **P1 尽快处理** | EPSS ≥ 0.1；或 CVSS ≥ 7.0 且服务对公网监听 |
-| **P2 计划处理** | 其余 High/Critical |
+| **P2 有空时处理** | 其余 High/Critical |
 | **P3 了解即可** | Medium/Low；默认折叠显示 |
 
 CVSS 只是其中一个维度。不得根据评分推断"可远程提权"之类的结论。

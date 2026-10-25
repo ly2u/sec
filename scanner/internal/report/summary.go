@@ -103,13 +103,18 @@ func isUnfixed(f match.Finding) bool {
 func vulnCount(g *pkgGroup) int {
 	seen := map[string]bool{}
 	for _, f := range g.findings {
-		key := f.ID
-		if len(f.CVEs) == 1 {
-			key = f.CVEs[0]
-		}
-		seen[key] = true
+		seen[vulnKey(f)] = true
 	}
 	return len(seen)
+}
+
+// vulnKey identifies a vulnerability across advisories (a GO- or DSA ID
+// with a single CVE is that CVE), so every count agrees.
+func vulnKey(f match.Finding) string {
+	if len(f.CVEs) == 1 {
+		return f.CVEs[0]
+	}
+	return f.ID
 }
 
 func maxEPSS(fs []match.Finding) float64 {
@@ -371,14 +376,14 @@ func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[strin
 		if g.goProg {
 			comment = fmt.Sprintf("%s（%s）需要单独更新，这里有下载地址和具体步骤", g.pkg, g.findings[0].Path)
 		}
-		cmd("secwatch scan --pkg "+a, comment)
+		cmd(Cmd+" scan --pkg "+a, comment)
 		ref["pkg:"+g.pkg] = len(steps)
 	}
 	for i, c := range r.containersToFix() {
 		if i == 3 {
 			break
 		}
-		cmd("secwatch scan --container "+c.Label(), "查看重建镜像的步骤")
+		cmd(Cmd+" scan --container "+c.Label(), "查看重建镜像的步骤")
 		ref["ctr:"+c.Label()] = len(steps)
 	}
 	switch {
@@ -399,7 +404,7 @@ func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[strin
 	if len(steps) == 0 {
 		return nil, ref, false
 	}
-	cmd("secwatch scan", "再查一次，确认已修复")
+	cmd(Cmd+" scan", "再查一次，确认已修复")
 	return steps, ref, distro && r.kind == version.Deb
 }
 
@@ -533,7 +538,7 @@ func (r *Report) writeVulnList(t term, fs []match.Finding, title string) {
 		fmt.Fprintf(t, "    %s  %s  %s\n", f.Priority, pad(id, 16), strings.Join(b, " · "))
 	}
 	if limit < len(sorted) {
-		hint := "secwatch scan --pkg " + pkgArg(r.only) + " --all"
+		hint := Cmd + " scan --pkg " + pkgArg(r.only) + " --all"
 		if pkgArg(r.only) == "" {
 			hint = "--all"
 		}
@@ -550,7 +555,7 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	var out [][2]string
 	add := func(k, v string) { out = append(out, [2]string{k, v}) }
 	if r.inContainer != nil {
-		add("修复", "更新镜像后重建容器，不要在容器里直接升级（步骤见 secwatch scan --container "+r.inContainer.Label()+"）")
+		add("修复", "更新镜像后重建容器，不要在容器里直接升级（步骤见 "+Cmd+" scan --container "+r.inContainer.Label()+"）")
 		return out, nil
 	}
 	if g.goProg {
@@ -613,9 +618,13 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 	return out, bins
 }
 
-// InstallCommand updates (or installs) the scanner; install.sh verifies the
-// release signature before replacing the binary.
+// InstallCommand installs the scanner; install.sh verifies the release
+// signature before copying the binary.
 const InstallCommand = "curl -fsSL https://sec.ly2u.com/install.sh | sh"
+
+// Cmd is how the user runs the scanner: "secwatch", or "sec" where the short
+// name is installed. Every suggested command uses it.
+var Cmd = "secwatch"
 
 // writeUpdate is the "new version available" hint. It never updates anything.
 func (r *Report) writeUpdate(t term) {
@@ -625,6 +634,7 @@ func (r *Report) writeUpdate(t term) {
 	fmt.Fprintln(t)
 	t.paint(cYellow, fmt.Sprintf("有新版本 %s（当前 %s）", r.Update, r.Scanner))
 	t.paint(cDim, "，更新：")
-	t.paint(cCmd, InstallCommand)
+	t.paint(cCmd, "sudo "+Cmd+" update")
+	t.paint(cDim, "（或在 sudo "+Cmd+" 菜单里选“更新”）")
 	fmt.Fprintln(t)
 }

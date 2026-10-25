@@ -30,6 +30,7 @@ type menu struct {
 	scanArgs []string       // extra scan flags (tests)
 	rep      *report.Report // the last check, reused for details
 	now      func() time.Time
+	update   func() (string, error) // install the latest release; "" if current
 }
 
 // interactive reports whether both stdin and stdout are terminals.
@@ -48,6 +49,13 @@ func runMenu() int {
 	m := &menu{
 		in: in, out: os.Stdout, err: os.Stderr, color: colorTerminal(os.Stdout), root: os.Geteuid() == 0,
 		sched: systemScheduler(in, os.Stdout), now: time.Now,
+	}
+	m.update = func() (string, error) {
+		u, err := newUpdater(os.Stdout)
+		if err != nil {
+			return "", err
+		}
+		return u.run()
 	}
 	info := []string{}
 	if h := hostname(system.Host{Root: "/"}); h != "" {
@@ -75,11 +83,11 @@ func (m *menu) scheduled() (line string, cfg *notify.Config, on bool) {
 		_, err := os.Stat(path)
 		switch {
 		case err == nil:
-			return "已开启（用 sudo secwatch 打开菜单可查看和修改）", nil, true
+			return "已开启（用 sudo " + report.Cmd + " 打开菜单可查看和修改）", nil, true
 		case errors.Is(err, os.ErrNotExist):
 			return "未开启", nil, false
 		}
-		return "用 sudo secwatch 打开菜单才能查看", nil, false
+		return "用 sudo " + report.Cmd + " 打开菜单才能查看", nil, false
 	}
 	c, err := notify.Load(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -132,12 +140,19 @@ func (m *menu) run() int {
 		cfg, on := m.header()
 		m.item("1", "立即检查")
 		m.item("2", "查看某个程序、软件包或容器的详情")
+		updateKey := "4"
 		if on {
 			m.item("3", "修改定时检查与通知")
 			m.item("4", "发一条测试通知")
 			m.item("5", "关闭定时检查")
+			updateKey = "6"
 		} else {
 			m.item("3", "开启定时检查与通知（有新问题时发到你的 Telegram 或 Webhook）")
+		}
+		if m.rep != nil && m.rep.Update != "" {
+			m.item(updateKey, fmt.Sprintf("更新到 %s（当前 %s）", m.rep.Update, Version))
+		} else {
+			m.item(updateKey, fmt.Sprintf("检查更新（当前 %s）", Version))
 		}
 		m.item("0", "退出")
 		fmt.Fprintln(m.out)
@@ -152,6 +167,10 @@ func (m *menu) run() int {
 			m.details()
 		case choice == "3":
 			m.setup(cfg)
+		case choice == updateKey:
+			if m.updateNow() {
+				return exitOK
+			}
 		case choice == "4" && on:
 			m.test(cfg)
 		case choice == "5" && on:
@@ -232,9 +251,9 @@ func (m *menu) details() {
 		return
 	}
 	fmt.Fprintln(m.out)
-	cmd := "secwatch scan --pkg "
+	cmd := report.Cmd + " scan --pkg "
 	if pick.Container {
-		cmd = "secwatch scan --container "
+		cmd = report.Cmd + " scan --container "
 		sub, _ := rep.SelectContainer(pick.Name)
 		sub.WriteText(m.out)
 	} else {
@@ -248,9 +267,27 @@ func (m *menu) details() {
 	}
 }
 
+// updateNow installs the latest release. It reports whether the program was
+// replaced, in which case the menu ends: the new version starts next time.
+func (m *menu) updateNow() bool {
+	if m.needRoot() {
+		return false
+	}
+	ver, err := m.update()
+	if err != nil {
+		fmt.Fprintf(m.out, "更新失败：%v\n", err)
+		return false
+	}
+	if ver == "" {
+		return false
+	}
+	fmt.Fprintf(m.out, "重新运行 sudo %s 即可使用 %s。\n", report.Cmd, ver)
+	return true
+}
+
 func (m *menu) needRoot() bool {
 	if !m.root {
-		fmt.Fprintln(m.out, "这一项需要 root：请用 sudo secwatch 打开菜单。")
+		fmt.Fprintln(m.out, "这一项需要 root：请用 sudo "+report.Cmd+" 打开菜单。")
 	}
 	return !m.root
 }

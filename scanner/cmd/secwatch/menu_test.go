@@ -97,3 +97,34 @@ func TestMenuDetails(t *testing.T) {
 		t.Error("the second lookup reuses the check")
 	}
 }
+
+func TestMenuUpdate(t *testing.T) {
+	m, _, out := testMenu(t, "4\n\n4\n", true)
+	calls := 0
+	m.update = func() (string, error) {
+		calls++
+		if calls == 1 {
+			out.WriteString("已经是最新版本 dev。\n")
+			return "", nil
+		}
+		return "v9.9.9", nil
+	}
+	if code := m.run(); code != exitOK {
+		t.Fatal(code)
+	}
+	o := out.String()
+	for _, want := range []string{"4  检查更新（当前 dev）", "已经是最新版本", "重新运行 sudo secwatch 即可使用 v9.9.9"} {
+		if !strings.Contains(o, want) {
+			t.Errorf("missing %q:\n%s", want, o)
+		}
+	}
+	if calls != 2 {
+		t.Errorf("the menu ends after a successful update: %d", calls)
+	}
+	m, _, out = testMenu(t, "4\n0\n", false)
+	m.update = func() (string, error) { t.Fatal("non-root must not update"); return "", nil }
+	m.run()
+	if !strings.Contains(out.String(), "这一项需要 root") {
+		t.Error(out.String())
+	}
+}

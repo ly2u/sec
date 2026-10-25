@@ -2,7 +2,7 @@
 
 只读的 Linux 漏洞自检工具。Go 静态编译单文件，无运行时依赖。
 
-安装：`curl -fsSL https://sec.ly2u.com/install.sh | sh`，发布版本见 [Releases](https://github.com/ly2u/sec/releases)。
+安装：`curl -fsSL https://sec.ly2u.com/install.sh | sh`，发布版本见 [Releases](https://github.com/ly2u/sec/releases)。安装后有两个等价的命令：`secwatch` 和短命令 `lysec`（名字未被其他程序占用时才会创建），下文都用 `lysec`。
 
 ## 它做什么
 
@@ -30,14 +30,14 @@
 ## 用法
 
 ```
-secwatch scan                       # 体检清单：结论、逐项问题与处理方式、修复命令（建议以 root 运行）
-secwatch scan --format json         # 机器可读输出
-secwatch scan --pkg openssh         # 只看一个软件包：全部漏洞、升级与验证命令
-secwatch scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）
-secwatch scan --container db        # 只看一个容器（以 root 运行时默认检查运行中的容器）
-secwatch scan --fail-on P2          # 定时任务：P2 及以上就返回退出码 3
-secwatch scan --pkg caddy           # Go 编译的程序也能单独查看（模块、Go 版本对应的漏洞）
-secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
+lysec scan                       # 体检清单：结论、逐项问题与处理方式、修复命令（建议以 root 运行）
+lysec scan --format json         # 机器可读输出
+lysec scan --pkg openssh         # 只看一个软件包：全部漏洞、升级与验证命令
+lysec scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）
+lysec scan --container db        # 只看一个容器（以 root 运行时默认检查运行中的容器）
+lysec scan --fail-on P2          # 定时任务：P2 及以上就返回退出码 3
+lysec scan --pkg caddy           # Go 编译的程序也能单独查看（模块、Go 版本对应的漏洞）
+lysec scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 ```
 
 退出码：`0` 无紧急问题 · `3` 存在 P0/P1 问题 · `1` 扫描失败 · `2` 参数错误。可直接用于定时任务和监控告警。
@@ -46,28 +46,28 @@ secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 
 ## 菜单
 
-在终端里不带参数运行 `sudo secwatch` 会打开菜单，显示定时检查的状态和上次检查的结论，按数字选择：立即检查、查看某个程序/软件包/容器的详情、开启或修改定时检查与通知、发测试通知、关闭定时检查。每一项都有对应的命令（见下），脚本里不带参数运行只会输出帮助。
+在终端里不带参数运行 `sudo lysec` 会打开菜单，显示定时检查的状态和上次检查的结论，按数字选择：立即检查、查看某个程序/软件包/容器的详情、开启或修改定时检查与通知、发测试通知、关闭定时检查。每一项都有对应的命令（见下），脚本里不带参数运行只会输出帮助。
 
 ## 定时检查与通知
 
 ```
-sudo secwatch schedule                       # 交互设置 Telegram 机器人或 Webhook，默认每小时检查
-sudo secwatch schedule --every 6 --notify-on P0 --telegram-chat 123456789
-sudo secwatch schedule --status              # 查看设置与状态
-sudo secwatch schedule --remove              # 关闭并删除全部配置
+sudo lysec schedule                       # 交互设置 Telegram 机器人或 Webhook，默认每小时检查
+sudo lysec schedule --every 6 --notify-on P0 --telegram-chat 123456789
+sudo lysec schedule --status              # 查看设置与状态
+sudo lysec schedule --remove              # 关闭并删除全部配置
 ```
 
-开启前先发测试消息。之后由 systemd 定时器运行 `secwatch scan --notify`（文件系统只读），新问题立即通知，未修复的每天最多提醒一次，修好后通知“已恢复”。消息只发到你配置的渠道，不经过 SecWatch 服务器；不会自动修复。这是扫描器唯一会写入系统的功能，只在你运行 `schedule` 时发生。
+开启前先发测试消息。之后由 systemd 定时器运行 `lysec scan --notify`（文件系统只读），新问题立即通知，未修复的每天最多提醒一次，修好后通知“已恢复”。消息只发到你配置的渠道，不经过 SecWatch 服务器；不会自动修复。这是扫描器唯一会写入系统的功能，只在你运行 `schedule` 时发生。
 
 ## 更新
 
-漏洞数据每次扫描时自动获取最新的签名数据包，**不需要为了新漏洞更新程序**。程序本身有新版本时，报告最后会多一行提示；更新方法就是重新运行安装命令（会校验发布签名后覆盖旧版本）：
+漏洞数据每次扫描时自动获取最新的签名数据包，**不需要为了新漏洞更新程序**。程序本身有新版本时，报告最后会多一行提示。更新：
 
 ```
-curl -fsSL https://sec.ly2u.com/install.sh | sh
+sudo lysec update        # 或在 sudo lysec 菜单里选“更新”
 ```
 
-程序只提示，从不自动更新自己。
+它和安装脚本一样，先校验发布签名（发布密钥 C7A3F417E9543893）和 SHA-256，并确认新程序能在这台机器上运行，才原子替换旧版本；任何一步失败都不改动文件。程序从不自动更新自己。重新运行安装命令也可以更新；退回某个版本：`curl -fsSL https://sec.ly2u.com/install.sh | SECWATCH_VERSION=v0.1.9 sh`。
 
 ## 判定状态
 

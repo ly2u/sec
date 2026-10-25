@@ -161,7 +161,7 @@ func (r *Report) goSteps(g *pkgGroup) []string {
 	if f.Method == "package" && f.Unit != "" && unitRe.MatchString(f.Unit) {
 		steps = append(steps, "sudo systemctl restart "+f.Unit+"    # 让新版本生效")
 	}
-	steps = append(steps, "secwatch scan --pkg "+pkgArg(g.pkg)+"    # 确认问题已消失")
+	steps = append(steps, Cmd+" scan --pkg "+pkgArg(g.pkg)+"    # 确认问题已消失")
 	return steps
 }
 
@@ -250,25 +250,33 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 	comps := goComponents(all)
 	// The same vulnerability can sit in two components (the standard library
 	// and golang.org/x/net); the total counts it once.
-	ids := map[string]bool{}
+	ids, fixedIDs := map[string]bool{}, map[string]bool{}
 	for _, f := range all {
-		ids[f.ID] = true
+		ids[vulnKey(f)] = true
+	}
+	for _, f := range g.findings {
+		fixedIDs[vulnKey(f)] = true
 	}
 	total := len(ids)
+	// The summary row counts what an upgrade fixes; say how the two relate.
+	countText := fmt.Sprintf("共 %d 个漏洞", total)
+	if open := total - len(fixedIDs); open > 0 && len(fixedIDs) > 0 {
+		countText = fmt.Sprintf("共 %d 个漏洞：%d 个已有修复版本，%d 个暂无修复", total, len(fixedIDs), open)
+	}
 	cw, vw := width("组件"), width("当前版本")
 	for _, c := range comps {
 		cw = max(cw, min(width(c.label), 40))
 		vw = max(vw, min(width(c.installed), 20))
 	}
 	fmt.Fprintln(t)
-	t.paint(cBold, fmt.Sprintf("  问题出在这些组件（共 %d 个漏洞）", total))
+	t.paint(cBold, "  问题出在这些组件（"+countText+"）")
 	fmt.Fprintln(t)
 	t.paint(cDim, fmt.Sprintf("    %s  %s  %s  %s", pad("组件", cw), pad("当前版本", vw), "漏洞数", "修复需要"))
 	fmt.Fprintln(t)
 	const maxRows = 8
 	for i, c := range comps {
 		if i == maxRows {
-			t.paint(cDim, fmt.Sprintf("    其余 %d 个组件见 secwatch scan --pkg %s --all", len(comps)-maxRows, pkgArg(g.pkg)))
+			t.paint(cDim, fmt.Sprintf("    其余 %d 个组件见 %s scan --pkg %s --all", len(comps)-maxRows, Cmd, pkgArg(g.pkg)))
 			fmt.Fprintln(t)
 			break
 		}
@@ -323,7 +331,7 @@ func (r *Report) writeGoProgram(t term, g *pkgGroup, unfixed []match.Finding) {
 	if r.showAll {
 		r.writeVulnList(t, all, fmt.Sprintf("全部漏洞 %d 个", total))
 	} else {
-		t.paint(cDim, "  逐个漏洞：secwatch scan --pkg "+pkgArg(g.pkg)+" --all")
+		t.paint(cDim, "  逐个漏洞："+Cmd+" scan --pkg "+pkgArg(g.pkg)+" --all")
 		fmt.Fprintln(t)
 	}
 }

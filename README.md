@@ -9,10 +9,10 @@
 
 ```sh
 curl -fsSL https://sec.ly2u.com/install.sh | sh
-sudo secwatch scan
+sudo lysec scan
 ```
 
-安装脚本会先校验发布签名（minisign，或 OpenSSL 3）和 SHA-256，再把单个静态二进制放到 `/usr/local/bin`，不做其他改动。扫描只读、不上传任何数据。
+安装脚本会先校验发布签名（minisign，或 OpenSSL 3）和 SHA-256，再把单个静态二进制 `secwatch` 放到 `/usr/local/bin`，并创建短命令 `lysec`（如果这个名字没被其他程序占用；两者完全相同），不做其他改动。扫描只读、不上传任何数据。
 
 报告是一张“体检清单”：一行结论，逐项说明问题和处理方式，最后是可以照着执行的命令。
 
@@ -32,8 +32,8 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
  建议这样做
    1  sudo apt-get update && sudo apt-get install --only-upgrade caddy
    2  sudo systemctl restart caddy.service
-   3  secwatch scan --container my-api
-   4  secwatch scan
+   3  lysec scan --container my-api
+   4  lysec scan
 ```
 
 ## 能查什么
@@ -45,24 +45,25 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
 - **补丁是否生效**：内核更新后没重启、服务还在用升级前的旧库。
 - **先修哪个**：已被在野利用（CISA KEV）、被勒索软件利用、被利用概率（FIRST EPSS）、是否对外提供服务，综合成“立即 / 尽快 / 计划”。
 
-不想记命令？直接运行 `sudo secwatch`，按数字选择即可。常用命令：
+不想记命令？直接运行 `sudo lysec`，按数字选择即可。常用命令：
 
 | 命令 | 作用 |
 |---|---|
-| `sudo secwatch` | 打开菜单：立即检查、查看详情、开启/修改/关闭定时检查与通知 |
-| `sudo secwatch scan` | 体检清单（建议以 root 运行，才能检查容器和对外服务） |
-| `secwatch scan --pkg caddy` | 只看一个软件包或程序：漏洞、所需版本和完整修复命令 |
-| `secwatch scan --container NAME` | 只看一个容器 |
-| `secwatch scan --all` | 完整报告：全部漏洞、验证命令、参考链接 |
-| `secwatch scan --format json` | 给脚本和监控用 |
-| `secwatch scan --fail-on P2` | 给自己的脚本用：达到该级别时退出码为 3 |
-| `sudo secwatch schedule` | 定时检查，有新问题时通知你的 Telegram 或 Webhook（整数小时，最少 1；`--remove` 关闭） |
+| `sudo lysec` | 打开菜单：立即检查、查看详情、开启/修改/关闭定时检查与通知 |
+| `sudo lysec scan` | 体检清单（建议以 root 运行，才能检查容器和对外服务） |
+| `lysec scan --pkg caddy` | 只看一个软件包或程序：漏洞、所需版本和完整修复命令 |
+| `lysec scan --container NAME` | 只看一个容器 |
+| `lysec scan --all` | 完整报告：全部漏洞、验证命令、参考链接 |
+| `lysec scan --format json` | 给脚本和监控用 |
+| `lysec scan --fail-on P2` | 给自己的脚本用：达到该级别时退出码为 3 |
+| `sudo lysec schedule` | 定时检查，有新问题时通知你的 Telegram 或 Webhook（整数小时，最少 1；`--remove` 关闭） |
+| `sudo lysec update` | 更新到最新版本（校验发布签名后替换；菜单里也有“更新”） |
 
-漏洞数据每次扫描都会自动获取最新版，不需要为了新漏洞更新程序。程序本身有新版本时，报告最后会提示一行；更新就是重新运行安装命令。程序只提示，从不自动更新自己。
+漏洞数据每次扫描都会自动获取最新版，不需要为了新漏洞更新程序。程序本身有新版本时，报告最后会提示一行，在菜单里选“更新”或运行 `sudo lysec update` 即可。程序从不自动更新自己。
 
 ## 设计原则
 
-- **只读**：扫描器不修改系统，不执行修复命令，只告诉你该怎么做。
+- **只读**：扫描不修改系统，不执行修复命令，只告诉你该怎么做。只有你明确要求的两件事会写入：开启定时检查（`schedule`）和更新程序本身（`update`）。
 - **不上传**：所有比对在本机完成。服务器只提供签名的漏洞数据包，不接收你的软件清单。开启定时通知后，结论只发到你自己配置的 Telegram/Webhook。
 - **数据包只含事实**：数据包里没有任何可执行内容，修复命令由扫描器按内置模板生成，名称要通过白名单校验。
 - **不确定就说不确定**：证据不足时标为“可能受影响”或“未检查”，不会把“没查到”说成“安全”。

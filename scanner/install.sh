@@ -5,8 +5,9 @@
 #
 # Downloads the secwatch scanner from GitHub Releases, verifies the release
 # signature (minisign, or OpenSSL 3 when minisign is absent) and the SHA-256
-# checksum, and copies the binary into place. It changes nothing else and does
-# not run a scan.
+# checksum, and copies the binary into place, with a short command lysec
+# pointing to it when no other program uses that name. It changes nothing
+# else and does not run a scan.
 #
 # Environment:
 #   SECWATCH_VERSION        release tag, e.g. v0.1.0 (default: latest)
@@ -172,20 +173,33 @@ main() {
 	mv -f "$dir/.secwatch.new.$$" "$dir/secwatch" || die "无法写入 $dir/secwatch"
 
 	say "已安装：$("$dir/secwatch" version) -> $dir/secwatch"
+
+	# Short command lysec -> secwatch, unless the name is taken by anything.
+	short=lysec
+	if [ -L "$dir/$short" ] && [ "$(readlink "$dir/$short")" = secwatch ]; then
+		:
+	elif [ -e "$dir/$short" ] || [ -L "$dir/$short" ] || have "$short"; then
+		say "提示：$short 已被其他程序占用，没有创建短命令，请使用 secwatch。"
+		short=""
+	elif ! ln -s secwatch "$dir/$short" 2>/dev/null; then
+		short=""
+	fi
+
+	name=${short:-secwatch}
 	case ":$PATH:" in
-	*":$dir:"*) cmd=secwatch ;;
+	*":$dir:"*) cmd=$name ;;
 	*)
-		cmd="$dir/secwatch"
+		cmd="$dir/$name"
 		say "提示：$dir 不在 PATH 中"
 		;;
 	esac
 	say ""
 	sudo="sudo "
 	[ "$(id -u)" = 0 ] && sudo=""
-	say "开始检查（只读，不修改系统、不上传数据）："
-	say "  ${sudo}$cmd scan"
-	say "或者打开菜单（立即检查、查看详情、开启定时检查与 Telegram 通知）："
+	say "打开菜单（立即检查、查看详情、定时检查与 Telegram 通知、更新）："
 	say "  ${sudo}$cmd"
+	say "或者直接检查（只读，不修改系统、不上传数据）："
+	say "  ${sudo}$cmd scan"
 }
 
 main "$@"

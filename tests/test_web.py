@@ -375,7 +375,7 @@ def test_titles_and_icon(client):
 def test_copy_buttons_are_progressive(client):
     html = client.get("/").text
     assert (
-        'data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo secwatch scan" hidden'
+        'data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh&#10;sudo lysec scan" hidden'
         in html
     )
     script = client.get("/static/site.js")

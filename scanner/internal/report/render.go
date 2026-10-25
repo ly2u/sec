@@ -14,7 +14,7 @@ import (
 )
 
 var priorityLabel = map[string]string{
-	"P0": "立即处理", "P1": "尽快处理", "P2": "计划处理", "P3": "了解即可",
+	"P0": "立即处理", "P1": "尽快处理", "P2": "有空时处理", "P3": "了解即可",
 }
 
 // pkgGroup collects the findings of one package for display.
@@ -240,7 +240,7 @@ func (r *Report) WriteText(out io.Writer) {
 			parts = append(parts, fmt.Sprintf("尽快处理 %d 个", n))
 		}
 		if n := count["P2"]; n > 0 {
-			parts = append(parts, fmt.Sprintf("计划处理 %d 个", n))
+			parts = append(parts, fmt.Sprintf("有空时处理 %d 个", n))
 		}
 		if n := count["P3"]; n > 0 {
 			parts = append(parts, fmt.Sprintf("低优先级 %d 个", n))
@@ -572,7 +572,7 @@ func (r *Report) writeNextSteps(w io.Writer, fixable []*pkgGroup) {
 		fmt.Fprintf(w, "  %d. 重启使用了这些软件的服务（不确定时可直接 sudo reboot）\n", step)
 	}
 	step++
-	fmt.Fprintf(w, "  %d. 再次运行 secwatch scan 确认已全部修复\n", step)
+	fmt.Fprintf(w, "  %d. 再次运行 %s scan 确认已全部修复\n", step, Cmd)
 }
 
 var processName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)

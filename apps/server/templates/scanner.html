@@ -13,7 +13,7 @@
 
 <h2>安装</h2>
 <div class="codebox"><button type="button" class="copy" data-copy="curl -fsSL https://sec.ly2u.com/install.sh | sh" hidden>复制</button><pre><code>curl -fsSL https://sec.ly2u.com/install.sh | sh</code></pre></div>
-<p>安装脚本只做三件事：从 GitHub Releases 下载对应 CPU 架构的程序，校验发布签名和 SHA-256，复制到 <code>/usr/local/bin</code>（非 root 时为 <code>~/.local/bin</code>）。签名校验使用 minisign；没有 minisign 时使用 OpenSSL 3。校验失败会直接中止。</p>
+<p>安装脚本只做三件事：从 GitHub Releases 下载对应 CPU 架构的程序，校验发布签名和 SHA-256，复制到 <code>/usr/local/bin</code>（非 root 时为 <code>~/.local/bin</code>），并创建短命令 <code>lysec</code>（与 <code>secwatch</code> 完全相同；名字已被其他程序占用时不创建）。签名校验使用 minisign；没有 minisign 时使用 OpenSSL 3。校验失败会直接中止。</p>
 <p>想先看脚本内容，可以先下载再运行：</p>
 <div class="codebox"><button type="button" class="copy" data-copy="curl -fsSLo install.sh https://sec.ly2u.com/install.sh&#10;less install.sh&#10;sh install.sh" hidden>复制</button><pre><code>curl -fsSLo install.sh https://sec.ly2u.com/install.sh
 less install.sh
@@ -27,19 +27,19 @@ sha256sum -c --ignore-missing SHA256SUMS</code></pre>
 <p class="small">也可以用 GitHub 的构建来源证明确认程序由本仓库的公开流程构建：<code>gh attestation verify secwatch-linux-amd64 --repo ly2u/sec</code></p>
 
 <h3>更新</h3>
-<p>漏洞数据每次扫描都会自动获取最新版，不需要为了新漏洞更新程序。程序有新版本时，报告最后会提示一行；更新就是重新运行上面的安装命令，安装脚本会先校验发布签名再覆盖旧版本。程序只提示，从不自动更新自己。</p>
+<p>漏洞数据每次扫描都会自动获取最新版，不需要为了新漏洞更新程序。程序有新版本时，报告最后会提示一行；在 <code>sudo lysec</code> 菜单里选“更新”，或运行 <code>sudo lysec update</code>。它和安装脚本一样先校验发布签名和 SHA-256、确认新程序能运行，才替换旧版本。程序从不自动更新自己。</p>
 
 <h3>定时检查与通知</h3>
-<p>想让它自己定期检查、有新问题时提醒你？运行 <code>sudo secwatch</code> 打开菜单选 3，或者直接：</p>
-<div class="codebox"><button type="button" class="copy" data-copy="sudo secwatch schedule" hidden>复制</button><pre><code>sudo secwatch schedule</code></pre></div>
-<p>按提示填入 Telegram 机器人（或 Webhook 地址），它会先发一条测试消息，确认收到后才开启。默认每 1 小时检查一次（可设 1–720 的整数小时），出现“尽快处理”及以上、或已被在野利用的<strong>新问题</strong>时立即通知；没修好的每天最多提醒一次，修好后通知“已恢复”。消息只发到你自己的渠道，不经过本站；只提醒，不会自动修复。国内机器连不上 Telegram 时，可以用 <code>--telegram-api</code> 指定自建反代。查看状态：<code>sudo secwatch schedule --status</code>；关闭并删除全部配置：<code>sudo secwatch schedule --remove</code>。</p>
+<p>想让它自己定期检查、有新问题时提醒你？运行 <code>sudo lysec</code> 打开菜单选 3，或者直接：</p>
+<div class="codebox"><button type="button" class="copy" data-copy="sudo lysec schedule" hidden>复制</button><pre><code>sudo lysec schedule</code></pre></div>
+<p>按提示填入 Telegram 机器人（或 Webhook 地址），它会先发一条测试消息，确认收到后才开启。默认每 1 小时检查一次（可设 1–720 的整数小时），出现“尽快处理”及以上、或已被在野利用的<strong>新问题</strong>时立即通知；没修好的每天最多提醒一次，修好后通知“已恢复”。消息只发到你自己的渠道，不经过本站；只提醒，不会自动修复。国内机器连不上 Telegram 时，可以用 <code>--telegram-api</code> 指定自建反代。查看状态：<code>sudo lysec schedule --status</code>；关闭并删除全部配置：<code>sudo lysec schedule --remove</code>。</p>
 
 <h2>使用</h2>
-<pre><code>sudo secwatch scan                 # 一屏看完：结论、要处理的软件包、修复命令
-sudo secwatch scan --pkg openssh   # 只看一个软件包：全部漏洞、升级和验证命令
-sudo secwatch scan --container db  # 只看一个容器的结果
-sudo secwatch scan --all           # 完整报告：全部结果、参考链接、说明
-sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
+<pre><code>sudo lysec scan                 # 一屏看完：结论、要处理的软件包、修复命令
+sudo lysec scan --pkg openssh   # 只看一个软件包：全部漏洞、升级和验证命令
+sudo lysec scan --container db  # 只看一个容器的结果
+sudo lysec scan --all           # 完整报告：全部结果、参考链接、说明
+sudo lysec scan --format json   # 给脚本和监控用</code></pre>
 <p>用 root 运行才能完整检查：哪些服务对公网监听、升级后哪些进程还在使用旧的库、内核是否需要重启。非 root 也能运行，但这几项会缺失。</p>
 
 <h3>示例输出</h3>
@@ -59,10 +59,10 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
  建议这样做
    1  sudo apt-get update &amp;&amp; sudo apt-get install --only-upgrade caddy
    2  sudo systemctl restart caddy.service
-   3  secwatch scan --container my-api
-   4  secwatch scan
+   3  lysec scan --container my-api
+   4  lysec scan
 
- 看详情  secwatch scan --pkg caddy     完整报告  secwatch scan --all</code></pre>
+ 看详情  lysec scan --pkg caddy     完整报告  lysec scan --all</code></pre>
 
 <h3>优先级</h3>
 <div class="tablewrap">
@@ -70,7 +70,7 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
   <tbody>
     <tr><td><span class="pri P0">P0</span></td><td>立即处理：已被确认在野利用（CISA KEV），或严重漏洞且服务对公网开放</td></tr>
     <tr><td><span class="pri P1">P1</span></td><td>尽快处理：未来 30 天被利用概率 ≥ 10%（EPSS），或高危漏洞且服务对公网开放</td></tr>
-    <tr><td><span class="pri P2">P2</span></td><td>计划处理：其余高危或严重漏洞</td></tr>
+    <tr><td><span class="pri P2">P2</span></td><td>有空时处理：其余高危或严重漏洞</td></tr>
     <tr><td><span class="pri P3">P3</span></td><td>了解即可：中低危，默认折叠</td></tr>
   </tbody>
 </table>
@@ -100,6 +100,6 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 <p class="small muted">暂不检查：未运行的镜像、RPM 系统的容器、Python/Node 等语言依赖包、Windows 和 macOS。未列出的问题不代表没有漏洞。</p>
 
 <h2>自建数据源</h2>
-<p>数据包是公开的静态文件，可以镜像到内网：<code>secwatch scan --bundle-url https://你的地址/bundles</code>。也可以完全离线运行：下载数据包后使用 <code>--offline --bundle 文件</code>。数据包都带有签名，扫描器只接受内置公钥（<a href="/keys/bundle-signing.pub">bundle-signing.pub</a>）签名的数据。</p>
+<p>数据包是公开的静态文件，可以镜像到内网：<code>lysec scan --bundle-url https://你的地址/bundles</code>。也可以完全离线运行：下载数据包后使用 <code>--offline --bundle 文件</code>。数据包都带有签名，扫描器只接受内置公钥（<a href="/keys/bundle-signing.pub">bundle-signing.pub</a>）签名的数据。</p>
 </section>
 {% endblock %}

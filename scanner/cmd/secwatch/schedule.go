@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ly2u/sec/scanner/internal/notify"
+	"github.com/ly2u/sec/scanner/internal/report"
 	"github.com/ly2u/sec/scanner/internal/system"
 )
 
@@ -70,7 +71,7 @@ func schedule(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if os.Geteuid() != 0 {
-		fmt.Fprintln(stderr, "secwatch schedule 需要 root：sudo secwatch schedule")
+		fmt.Fprintf(stderr, "secwatch schedule 需要 root：sudo %s schedule\n", report.Cmd)
 		return exitUsage
 	}
 	s := systemScheduler(bufio.NewReader(stdin), stdout)
@@ -143,7 +144,7 @@ func (s *scheduler) ask(prompt string) string {
 	return strings.TrimSpace(line)
 }
 
-var levelNames = map[string]string{"P0": "立即处理", "P1": "尽快处理", "P2": "计划处理"}
+var levelNames = map[string]string{"P0": "立即处理", "P1": "尽快处理", "P2": "有空时处理"}
 
 func (s *scheduler) install(c *notify.Config, test bool) error {
 	if s.exe == "" {
@@ -213,11 +214,11 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 		return fail(fmt.Errorf("启动定时器失败，已恢复原来的设置：%v %s", err, out))
 	}
 	fmt.Fprintf(s.out, `已开启：每 %s检查一次，出现「%s」及以上的新问题时通知。
-  查看状态   sudo secwatch schedule --status
+  查看和修改 sudo %s（菜单）
   运行记录   journalctl -u %s.service
-  关闭       sudo secwatch schedule --remove
+  关闭       sudo %s schedule --remove
 扫描只读，不会自动修复任何东西。
-`, humanEvery(every), levelNames[c.NotifyOn], unitName)
+`, humanEvery(every), levelNames[c.NotifyOn], report.Cmd, unitName, report.Cmd)
 	return nil
 }
 
@@ -258,7 +259,7 @@ func (s *scheduler) configure(cur *notify.Config) (*notify.Config, bool) {
 	levels := []string{"P0", "P1", "P2"}
 	def := map[string]string{"P0": "1", "P1": "2", "P2": "3"}[c.NotifyOn]
 	for {
-		a, ok := s.prompt(fmt.Sprintf("什么级别通知你？1 只在需要立即处理时  2 尽快处理及以上（推荐）  3 计划处理及以上 [%s]：", def))
+		a, ok := s.prompt(fmt.Sprintf("什么级别通知你？1 只在需要立即处理时  2 尽快处理及以上（推荐）  3 有空时处理及以上 [%s]：", def))
 		if !ok {
 			return nil, false
 		}
@@ -330,7 +331,7 @@ func (s *scheduler) hostLabel() string {
 func (s *scheduler) status() error {
 	c, err := notify.Load(s.path(configFile))
 	if errors.Is(err, os.ErrNotExist) {
-		fmt.Fprintln(s.out, "没有开启定时检查。开启：sudo secwatch schedule")
+		fmt.Fprintf(s.out, "没有开启定时检查。开启：sudo %s（菜单）或 sudo %s schedule\n", report.Cmd, report.Cmd)
 		return nil
 	}
 	if err != nil {

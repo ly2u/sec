@@ -45,7 +45,9 @@ const usage = `用法：
   secwatch                 打开菜单（在终端里不带参数运行）
   secwatch scan [选项]     只读扫描本机漏洞
   secwatch schedule [选项] 开启定时检查，发现新问题时通知你的 Telegram 或 Webhook（需要 root）
+  secwatch update          更新到最新版本（校验发布签名后替换，需要 root）
   secwatch version         显示版本
+  安装时会同时创建短命令 lysec（若未被其他程序占用），以上 secwatch 都可以换成 lysec。
 
 scan 选项：
   --format table|json      输出格式（默认 table）
@@ -81,6 +83,7 @@ schedule 选项：
 `
 
 func main() {
+	report.Cmd = commandName()
 	if len(os.Args) < 2 {
 		if interactive() {
 			os.Exit(runMenu())
@@ -89,6 +92,8 @@ func main() {
 		os.Exit(exitUsage)
 	}
 	switch os.Args[1] {
+	case "update":
+		os.Exit(update(os.Args[2:], os.Stdout, os.Stderr))
 	case "scan":
 		os.Exit(scan(os.Args[2:], os.Stdout, os.Stderr))
 	case "schedule":
@@ -180,7 +185,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	if o.onlyContainer != "" {
 		sub, ok := rep.SelectContainer(o.onlyContainer)
 		if !ok {
-			fmt.Fprintf(stderr, "secwatch: 没有找到已检查的容器 %q（用 secwatch scan 查看容器列表；需要以 root 运行）\n", o.onlyContainer)
+			fmt.Fprintf(stderr, "secwatch: 没有找到已检查的容器 %q（用 %s scan 查看容器列表；需要以 root 运行）\n", o.onlyContainer, report.Cmd)
 			return exitUsage
 		}
 		rep = sub
@@ -691,7 +696,7 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 	send func(*notify.Config, notify.Payload) error, now time.Time) int {
 	c, err := notify.Load(cfgPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "secwatch: 读取通知配置失败：%v（开启定时检查：sudo secwatch schedule）\n", err)
+		fmt.Fprintf(stderr, "secwatch: 读取通知配置失败：%v（开启定时检查：sudo %s）\n", err, report.Cmd)
 		return exitError
 	}
 	level, title, msg := rep.Verdict()

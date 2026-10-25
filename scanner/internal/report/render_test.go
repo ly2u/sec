@@ -322,8 +322,15 @@ func TestUpdateHint(t *testing.T) {
 	}
 	r.Update = "v0.1.4"
 	out := render(r)
-	if !strings.HasSuffix(strings.TrimSpace(out), "有新版本 v0.1.4（当前 v0.1.1），更新：curl -fsSL https://sec.ly2u.com/install.sh | sh") {
+	if !strings.HasSuffix(strings.TrimSpace(out), "有新版本 v0.1.4（当前 v0.1.1），更新：sudo secwatch update（或在 sudo secwatch 菜单里选“更新”）") {
 		t.Errorf("the hint is the last line:\n%s", out)
+	}
+	// With the short name installed, every hint uses it.
+	Cmd = "lysec"
+	defer func() { Cmd = "secwatch" }()
+	out = render(r)
+	if !strings.Contains(out, "sudo lysec update") || strings.Contains(out, "secwatch scan") {
+		t.Errorf("short name everywhere:\n%s", out)
 	}
 }
 
@@ -350,9 +357,9 @@ func TestGoComponentsAndSteps(t *testing.T) {
 	out := render(r)
 	t.Log("\n" + out)
 	for _, want := range []string{
-		"agent  未标版本号（2026-09-17 的代码）  P2 计划处理",
+		"agent  未标版本号（2026-09-17 的代码）  P2 有空时处理",
 		"位置  /opt/komari/agent（Go 程序，服务 komari-agent.service）",
-		"问题出在这些组件（共 4 个漏洞）",
+		"问题出在这些组件（共 4 个漏洞：3 个已有修复版本，1 个暂无修复）",
 		"Go 标准库            1.24.0         2  用 Go 1.25.13 或更高版本编译",
 		"golang.org/x/net     0.38.0         1  0.55.0 或更高",
 		"golang.org/x/crypto  0.39.0         1  暂无修复版本",

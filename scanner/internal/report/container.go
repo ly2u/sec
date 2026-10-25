@@ -144,7 +144,7 @@ func (r *Report) writeContainerFix(t term) {
 	fmt.Fprintln(t)
 	step++
 	fmt.Fprintf(t, "  %d. ", step)
-	t.paint(cCmd, "secwatch scan --container "+c.Label())
+	t.paint(cCmd, Cmd+" scan --container "+c.Label())
 	t.paint(cDim, "  # 再查一次")
 	fmt.Fprintln(t)
 	t.paint(cDim, "  如果最新镜像仍有这些漏洞，说明镜像还没更新：换用更新的版本标签，或者自建镜像时先升级基础镜像。")

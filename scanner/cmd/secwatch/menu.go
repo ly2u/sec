@@ -115,7 +115,7 @@ func (m *menu) scheduled() (line string, cfg *notify.Config, on bool) {
 
 func (m *menu) header() (cfg *notify.Config, on bool) {
 	fmt.Fprintln(m.out)
-	fmt.Fprintln(m.out, m.paint("1", "LY2U SecWatch "+Version)+"  "+m.paint("2", m.title))
+	fmt.Fprintln(m.out, m.paint("1", "lysec "+Version)+"  "+m.paint("2", m.title))
 	fmt.Fprintln(m.out)
 	line, cfg, on := m.scheduled()
 	fmt.Fprintln(m.out, "  定时检查  "+line)
@@ -296,7 +296,7 @@ func (m *menu) setup(cur *notify.Config) {
 	if m.needRoot() {
 		return
 	}
-	fmt.Fprintln(m.out, "设置定时检查。通知只发到你自己的渠道，不经过 SecWatch 服务器；只提醒，不会自动修复。")
+	fmt.Fprintln(m.out, "设置定时检查。通知只发到你自己的渠道，不经过我们的服务器；只提醒，不会自动修复。")
 	c, ok := m.sched.configure(cur)
 	if !ok {
 		return
@@ -314,7 +314,7 @@ func (m *menu) test(c *notify.Config) {
 	if m.needRoot() || c == nil {
 		return
 	}
-	if err := m.sched.sendTest(c, "🔔 %s：SecWatch 测试通知"); err != nil {
+	if err := m.sched.sendTest(c, "🔔 %s：lysec 测试通知"); err != nil {
 		fmt.Fprintf(m.out, "发送失败：%v\n", err)
 		return
 	}

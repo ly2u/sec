@@ -156,7 +156,7 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 	}
 	// Interactive setup when no channel was given on the command line.
 	if c.Telegram == nil && c.Webhook == nil {
-		fmt.Fprintln(s.out, "设置通知渠道（只发到你自己的渠道，不经过 SecWatch 服务器）。")
+		fmt.Fprintln(s.out, "设置通知渠道（只发到你自己的渠道，不经过我们的服务器）。")
 		if tok := s.ask("Telegram Bot Token（在 @BotFather 创建机器人获得；不用 Telegram 直接回车）："); tok != "" {
 			c.Telegram = &notify.Telegram{Token: tok, ChatID: s.ask("Telegram Chat ID（你的数字用户 ID，或频道 @名称）：")}
 			if a := s.ask("Telegram API 地址（直连 api.telegram.org 就直接回车；国内机器可填自建反代 https 地址）："); a != "" {
@@ -173,7 +173,7 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 		return err
 	}
 	if test {
-		if err := s.sendTest(c, "✅ %s：SecWatch 定时检查已开启"); err != nil {
+		if err := s.sendTest(c, "✅ %s：lysec 定时检查已开启"); err != nil {
 			return fmt.Errorf("测试消息发送失败，未开启定时检查：%w", err)
 		}
 		fmt.Fprintln(s.out, "测试消息已发送，请在你的渠道里确认收到。")
@@ -225,7 +225,7 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 // sendTest sends a test message; headline has one %s for the host name.
 func (s *scheduler) sendTest(c *notify.Config, headline string) error {
 	every, _ := notify.ParseEvery(c.Every)
-	text := fmt.Sprintf(headline+"\n每 %s检查一次，出现「%s」及以上（或已被在野利用）的新问题时通知你。\n— LY2U SecWatch %s（只读检查，不会自动修复）",
+	text := fmt.Sprintf(headline+"\n每 %s检查一次，出现「%s」及以上（或已被在野利用）的新问题时通知你。\n— lysec %s（只读检查，不会自动修复）",
 		s.hostLabel(), humanEvery(every), levelNames[c.NotifyOn], Version)
 	return s.send(c, notify.Payload{Host: s.host, Kind: "test", Level: "ok", Title: "测试", Text: text, Version: Version})
 }
@@ -488,7 +488,7 @@ func cronSpec(d time.Duration) (spec string, actual time.Duration) {
 
 func serviceUnit(exe string) string {
 	return `[Unit]
-Description=LY2U SecWatch scheduled vulnerability check (read-only)
+Description=lysec scheduled vulnerability check (read-only)
 Documentation=https://sec.ly2u.com/scanner
 After=network-online.target
 Wants=network-online.target
@@ -520,7 +520,7 @@ TimeoutStartSec=15min
 
 func timerUnit(every time.Duration) string {
 	return fmt.Sprintf(`[Unit]
-Description=Run LY2U SecWatch every %d minutes
+Description=Run lysec every %d minutes
 
 [Timer]
 OnBootSec=5min

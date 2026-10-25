@@ -174,7 +174,7 @@ func (r *Report) statusLine(t term, fixable []*pkgGroup) string {
 // writeChecklist is the default terminal view.
 func (r *Report) writeChecklist(t term) {
 	// Header: what was checked.
-	t.paint(cBold, "LY2U SecWatch "+r.Scanner)
+	t.paint(cBold, "lysec "+r.Scanner)
 	osLabel := OSLabel(r.OS.Distro, r.OS.Distro, r.OS.Release, "")
 	if _, ok := distroNames[r.OS.Distro]; !ok {
 		osLabel = r.OS.Name

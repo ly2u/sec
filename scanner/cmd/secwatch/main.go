@@ -1,4 +1,4 @@
-// Command secwatch is the LY2U SecWatch read-only vulnerability self-check.
+// Command secwatch is the lysec read-only vulnerability self-check.
 //
 // It never modifies the system, never uploads anything and never executes
 // remediation commands; it only prints them.
@@ -77,7 +77,7 @@ schedule 选项：
   --status                 查看定时检查的设置与状态
   --remove                 关闭定时检查，删除配置、定时器与通知记录
   不带渠道参数时会逐项询问。开启前先发一条测试消息；新问题立即通知，未修复的每天最多提醒一次，
-  修好后通知“已恢复”。只发到你自己的渠道，不经过 SecWatch 服务器；不会自动修复。
+  修好后通知“已恢复”。只发到你自己的渠道，不经过我们的服务器；不会自动修复。
 
 退出码：0 无紧急问题 · 3 存在可处理的 P0/P1 问题（见 --fail-on）或已被在野利用的漏洞 · 1 扫描失败 · 2 参数错误
 `
@@ -677,7 +677,7 @@ func notifyFailure(cfgPath, statePath string, stderr io.Writer, send func(*notif
 			if label == "" {
 				label = "服务器"
 			}
-			text := fmt.Sprintf("⚠️ %s：SecWatch 定时检查从 %s 起一直没能完成\n查看原因：journalctl -u secwatch.service -n 20\n— LY2U SecWatch %s",
+			text := fmt.Sprintf("⚠️ %s：lysec 定时检查从 %s 起一直没能完成\n查看原因：journalctl -u secwatch.service -n 20\n— lysec %s",
 				label, st.FailingSince.Local().Format("01-02 15:04"), Version)
 			if send(c, notify.Payload{Host: host, Kind: "failing", Level: "unknown", Title: "检查未完成", Text: text, Version: Version}) == nil {
 				st.FailNotified = true

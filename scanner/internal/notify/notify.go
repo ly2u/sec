@@ -311,7 +311,7 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 	var b strings.Builder
 	if ev.Kind == "resolved" {
 		fmt.Fprintf(&b, "✅ %s：之前提醒的问题都已处理\n", host)
-		fmt.Fprintf(&b, "— LY2U SecWatch %s · 只提醒，不会自动修复", version)
+		fmt.Fprintf(&b, "— lysec %s · 只提醒，不会自动修复", version)
 		return b.String()
 	}
 	items := ev.New
@@ -376,7 +376,7 @@ func Message(host, title, verdict string, ev *Event, version string) string {
 	if waiting < len(items) {
 		b.WriteString("怎么处理：登录服务器运行 sudo " + report.Cmd + " scan 查看报告，按“建议这样做”里的命令操作。\n")
 	}
-	fmt.Fprintf(&b, "— LY2U SecWatch %s · 只提醒，不会自动修复", version)
+	fmt.Fprintf(&b, "— lysec %s · 只提醒，不会自动修复", version)
 	return b.String()
 }
 

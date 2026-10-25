@@ -200,7 +200,7 @@ func reasons(g *pkgGroup) string {
 
 // writeBrief is the two-line header shared by the summary and --pkg views.
 func (r *Report) writeBrief(t term) {
-	t.paint(cBold, "LY2U SecWatch "+r.Scanner)
+	t.paint(cBold, "lysec "+r.Scanner)
 	line := " · " + r.OS.Name
 	if r.inContainer != nil {
 		line = " · " + r.containerBrief() + " · " + r.OS.Name

@@ -9,7 +9,7 @@ from apps.server.db import engine_for
 from apps.server.pages import router as page_router
 
 app = FastAPI(
-    title="LY2U SecWatch API",
+    title="lysec API",
     version="0.1.0",
     description="只读 API。数据来源与许可见 https://sec.ly2u.com/about",
     docs_url=None,

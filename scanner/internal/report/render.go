@@ -189,7 +189,7 @@ func (r *Report) WriteText(out io.Writer) {
 		return
 	}
 	w := safeWriter{out}
-	fmt.Fprintf(w, "LY2U SecWatch 漏洞自检 %s（只读检查，未修改系统）\n", r.Scanner)
+	fmt.Fprintf(w, "lysec 漏洞自检 %s（只读检查，未修改系统）\n", r.Scanner)
 	sys := r.OS.Name
 	if r.Kernel.Running != "" {
 		sys += "，内核 " + r.Kernel.Running
@@ -431,7 +431,7 @@ func (r *Report) WriteText(out io.Writer) {
 	if len(r.ThirdParty) > 0 {
 		section(w, "未覆盖：来自第三方源的软件包")
 		fmt.Fprintln(w, "  这些软件包不是由发行版官方仓库提供的，发行版漏洞数据不适用于它们，本次结论为“未知”。")
-		fmt.Fprintln(w, "  请关注这些软件的官方安全公告；SecWatch 已支持的软件（nginx、PHP、Node.js、Docker 等）会自动按上游版本判断，不在此列。")
+		fmt.Fprintln(w, "  请关注这些软件的官方安全公告；lysec 已支持的软件（nginx、PHP、Node.js、Docker 等）会自动按上游版本判断，不在此列。")
 		limit := 30
 		if r.showAll {
 			limit = len(r.ThirdParty)

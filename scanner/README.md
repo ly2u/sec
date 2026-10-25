@@ -1,6 +1,6 @@
-# secwatch 扫描器
+# lysec 扫描器
 
-只读的 Linux 漏洞自检工具。Go 静态编译单文件，无运行时依赖。
+只读的 Linux 漏洞自检工具（程序文件名为 `secwatch`，日常使用短命令 `lysec`，两者相同）。Go 静态编译单文件，无运行时依赖。
 
 安装：`curl -fsSL https://sec.ly2u.com/install.sh | sh`，发布版本见 [Releases](https://github.com/ly2u/sec/releases)。安装后有两个等价的命令：`secwatch` 和短命令 `lysec`（名字未被其他程序占用时才会创建），下文都用 `lysec`。
 
@@ -57,7 +57,7 @@ sudo lysec schedule --status              # 查看设置与状态
 sudo lysec schedule --remove              # 关闭并删除全部配置
 ```
 
-开启前先发测试消息。之后由 systemd 定时器运行 `lysec scan --notify`（文件系统只读），新问题立即通知，未修复的每天最多提醒一次，修好后通知“已恢复”。消息只发到你配置的渠道，不经过 SecWatch 服务器；不会自动修复。这是扫描器唯一会写入系统的功能，只在你运行 `schedule` 时发生。
+开启前先发测试消息。之后由 systemd 定时器运行 `lysec scan --notify`（文件系统只读），新问题立即通知，未修复的每天最多提醒一次，修好后通知“已恢复”。消息只发到你配置的渠道，不经过我们的服务器；不会自动修复。这是扫描器唯一会写入系统的功能，只在你运行 `schedule` 时发生。
 
 ## 更新
 

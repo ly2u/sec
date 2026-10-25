@@ -1,4 +1,4 @@
-# LY2U SecWatch
+# lysec
 
 > 面向 VPS 和自建服务器用户的漏洞情报站与只读安全自检工具。
 > Vulnerability intelligence and a read-only self-check scanner for VPS and self-hosted servers.
@@ -17,7 +17,7 @@ sudo lysec scan
 报告是一张“体检清单”：一行结论，逐项说明问题和处理方式，最后是可以照着执行的命令。
 
 ```
-LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查
+lysec v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查
 
  ● 状态良好  没有需要立即处理的漏洞，有 2 项建议更新
 

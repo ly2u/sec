@@ -360,12 +360,12 @@ def test_titles_and_icon(client):
     def title(path):
         return _re.search(r"<title>(.*?)</title>", client.get(path).text).group(1)
 
-    assert title("/") == "LY2U SecWatch｜服务器漏洞情报与一键自检"
+    assert title("/") == "lysec｜服务器漏洞情报与一键自检"
     assert title("/cve/CVE-2024-4577").startswith(
         "CVE-2024-4577（PHP）已被在野利用：影响范围与修复版本"
     )
     assert title("/cve/CVE-2026-0001").startswith("CVE-2026-0001（nginx）漏洞详情")
-    assert title("/product/php") == "PHP 漏洞列表与修复版本｜LY2U SecWatch"
+    assert title("/product/php") == "PHP 漏洞列表与修复版本｜lysec"
     icon = client.get("/favicon.svg")
     assert icon.status_code == 200 and icon.headers["content-type"].startswith("image/svg+xml")
     assert 'property="og:title"' in client.get("/").text

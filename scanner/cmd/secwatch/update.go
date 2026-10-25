@@ -122,7 +122,7 @@ func (u *updater) latest() (ver, want string, err error) {
 		return "", "", errors.New("签名文件格式不对，已中止")
 	}
 	if ok, err := u.key.Verify(sums, sig); err != nil || !ok {
-		return "", "", errors.New("签名校验失败（不是 SecWatch 发布密钥 C7A3F417E9543893 签的），已中止")
+		return "", "", errors.New("签名校验失败（不是 lysec 发布密钥 C7A3F417E9543893 签的），已中止")
 	}
 	m := commentRe.FindStringSubmatch(strings.TrimPrefix(sig.TrustedComment, "trusted comment: "))
 	if m == nil {

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}secwatch 扫描器：一条命令检查 Linux 服务器漏洞｜LY2U SecWatch{% endblock %}
-{% block description %}secwatch 是只读的 Linux 漏洞自检工具：不修改系统、不上传数据，单个静态二进制，无需 Docker。{% endblock %}
+{% block title %}lysec 扫描器：一条命令检查 Linux 服务器漏洞{% endblock %}
+{% block description %}lysec 是只读的 Linux 漏洞自检工具：不修改系统、不上传数据，单个静态二进制，无需 Docker。{% endblock %}
 {% block main %}
 <section class="panel prose">
-<h1>扫描器 secwatch</h1>
+<h1>扫描器 lysec</h1>
 <p>在服务器上运行一次，告诉你哪些软件有已知漏洞、该升级到哪个版本、先修哪个。它是单个静态二进制文件，不需要 Docker、Python 或其他依赖。</p>
 <ul class="plain">
   <li><strong>只读</strong>：不修改系统，不执行任何修复命令。修复命令只打印出来，由你决定是否执行。</li>
@@ -44,7 +44,7 @@ sudo lysec scan --format json   # 给脚本和监控用</code></pre>
 
 <h3>示例输出</h3>
 <p>一行结论，然后按“系统软件包 / 程序 / 容器 / 等待补丁”逐项说明问题和处理方式，最后给出照着执行的命令。想看细节，再用 <code>--pkg</code> 或 <code>--all</code>。</p>
-<pre><code>LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查
+<pre><code>lysec v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查
 
  ● 状态良好  没有需要立即处理的漏洞，有 2 项建议更新
 

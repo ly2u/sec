@@ -1,5 +1,5 @@
 #!/bin/sh
-# LY2U SecWatch installer.
+# lysec installer.
 #
 #   curl -fsSL https://sec.ly2u.com/install.sh | sh
 #
@@ -95,7 +95,7 @@ verify_signature() { # DIR
 		[ "$(wc -c <"$d/sig" | tr -d ' ')" = 74 ] || die "签名文件格式不对"
 		[ "$(head -c 2 "$d/sig")" = ED ] || die "签名算法不对"
 		[ "$(head -c 10 "$d/sig" | tail -c 8 | od -An -tx1 | tr -d ' \n')" = "$KEY_ID_RAW" ] ||
-			die "签名不是由 SecWatch 发布密钥 $KEY_ID 生成的"
+			die "签名不是由 lysec 发布密钥 $KEY_ID 生成的"
 		tail -c 64 "$d/sig" >"$d/sig.bin"
 		openssl dgst -blake2b512 -binary "$sums" >"$d/digest" || die "OpenSSL 不支持 BLAKE2b"
 		openssl pkeyutl -verify -pubin -inkey "$d/key.pem" -rawin -in "$d/digest" -sigfile "$d/sig.bin" \
@@ -159,7 +159,7 @@ main() {
 	if [ "$version" != latest ] && [ "$signed" != "$version" ]; then
 		die "要求的版本是 $version，下载到的签名版本却是 $signed，已中止"
 	fi
-	say "签名有效：SecWatch 发布密钥 $KEY_ID，版本 $signed"
+	say "签名有效：lysec 发布密钥 $KEY_ID，版本 $signed"
 
 	expected=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS")
 	[ -n "$expected" ] || die "校验清单中没有 $asset"

@@ -252,7 +252,7 @@ def rss(session: DB):
     body = (
         '<?xml version="1.0" encoding="utf-8"?>'
         '<rss version="2.0"><channel>'
-        "<title>LY2U SecWatch：需要立即关注的漏洞</title>"
+        "<title>lysec：需要立即关注的漏洞</title>"
         f"<link>{SITE_URL}/</link>"
         "<description>已确认在野利用或利用概率较高的漏洞事件</description>"
         "<language>zh-cn</language>" + "".join(items) + "</channel></rss>"
@@ -265,7 +265,7 @@ def rss(session: DB):
 
 
 HUMANS = """/* TEAM */
-项目：LY2U SecWatch
+项目：lysec
 站点：https://sec.ly2u.com
 源码：https://github.com/ly2u/sec
 彩蛋：既然你找到了这里，打个招呼吧 —— io@u2ly.com

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}隐私说明｜LY2U SecWatch{% endblock %}
+{% block title %}隐私说明｜lysec{% endblock %}
 {% block main %}
 <section class="panel prose">
 <h1>隐私</h1>
 <h2>扫描器</h2>
 <p>扫描器不向本站上传任何数据。它只向 <code>sec.ly2u.com</code> 请求公开的漏洞数据包（与任何访客下载的内容相同），请求中不包含你的软件清单、主机名或其他系统信息。所有比对都在你的机器上完成。可以用 <code>--offline</code> 完全断网运行来确认这一点。</p>
-<p>如果你用 <code>secwatch schedule</code> 开启了定时检查通知，扫描结论（主机名、结论和需要处理的软件包名称）只会发到你自己配置的 Telegram 机器人或 Webhook 地址，不经过本站。Telegram 消息由 Telegram 按其隐私政策处理。用 <code>secwatch schedule --remove</code> 可随时关闭。</p>
+<p>如果你用 <code>lysec</code> 菜单或 <code>lysec schedule</code> 开启了定时检查通知，扫描结论（主机名、结论和需要处理的软件包名称）只会发到你自己配置的 Telegram 机器人或 Webhook 地址，不经过本站。Telegram 消息由 Telegram 按其隐私政策处理。用 <code>secwatch schedule --remove</code> 可随时关闭。</p>
 <h2>网站</h2>
 <p>本站不使用 Cookie，不加载任何第三方脚本、字体或统计服务。页面只有一个本站脚本，用于“复制命令”按钮和浅色/深色切换，不发任何网络请求；你选择的主题只保存在你自己浏览器的本地存储里。</p>
 <p>本站经由 Cloudflare 提供服务，Cloudflare 会按其<a href="https://www.cloudflare.com/privacypolicy/">隐私政策</a>处理访问日志。源站服务器的反向代理会记录常规访问日志（IP 地址、时间、请求路径），只用于排查故障和防御攻击，不做其他用途。</p>

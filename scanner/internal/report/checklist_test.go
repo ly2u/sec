@@ -54,7 +54,7 @@ func TestChecklistOnMostlyCleanHost(t *testing.T) {
 	out := render(racknerd())
 	t.Log("\n" + out)
 	for _, want := range []string{
-		"LY2U SecWatch v0.1.5  racknerd-5a83f4d · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查",
+		"lysec v0.1.5  racknerd-5a83f4d · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查",
 		" ● 状态良好  没有需要立即处理的漏洞，有 2 项建议更新",
 		"   系统软件包  ✓ 共 730 个，官方源的都没有待修的漏洞（第三方源装的见“程序”）",
 		"   程序        ! 1 个建议更新，1 个在等作者发布新版",
@@ -85,7 +85,7 @@ func TestChecklistGutterOnColourTerminals(t *testing.T) {
 		t.Errorf("green bar in front of the check-up block:\n%q", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if strings.Contains(line, "建议这样做") || strings.Contains(line, "LY2U SecWatch") {
+		if strings.Contains(line, "建议这样做") || strings.Contains(line, "lysec") {
 			if strings.Contains(line, "▌") {
 				t.Errorf("only the check-up block has the bar: %q", line)
 			}

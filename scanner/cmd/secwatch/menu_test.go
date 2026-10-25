@@ -42,7 +42,7 @@ func TestMenuScheduleLifecycle(t *testing.T) {
 	if strings.Count(o, "定时检查  未开启") != 2 {
 		t.Error("the menu shows it is off again after removing")
 	}
-	if len(f.sent) != 2 || !strings.Contains(f.sent[1].Text, "SecWatch 测试通知") {
+	if len(f.sent) != 2 || !strings.Contains(f.sent[1].Text, "lysec 测试通知") {
 		t.Errorf("sent: %+v", f.sent)
 	}
 	if strings.Contains(o, testToken) {

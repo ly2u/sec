@@ -1,4 +1,4 @@
-/* LY2U SecWatch — "on watch": a console, dark by default with a light variant (follows the
+/* lysec — "on watch": a console, dark by default with a light variant (follows the
    system, or the header toggle). Colour means risk (P0–P3) or all-clear (radar green);
    interactive elements use one blue. No external resources. */
 :root {
@@ -143,7 +143,8 @@ pre code { background: none; padding: 0; font-size: 1em; }
 .brand { color: var(--strong); font-weight: 700; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 0.55rem; }
 .brand:hover { text-decoration: none; }
 .brand-mark { width: 26px; height: 26px; display: block; }
-.brand span { color: var(--muted); font-weight: 500; }
+.brand-name { letter-spacing: 0.01em; }
+.brand-name b { color: var(--radar); font-weight: 700; }
 .nav { display: flex; gap: 1.3rem; margin-right: auto; }
 .nav a { color: var(--muted); }
 .nav a:hover { color: var(--ink); text-decoration: none; }

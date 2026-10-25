@@ -96,7 +96,7 @@ sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 <p>CPU 架构：x86_64（amd64）、ARM64。</p>
 <p>不经软件包安装的软件（宝塔、LNMP 一键包、源码编译、官方二进制、nvm 等）会按程序路径识别版本并对照上游数据，目前支持：{% for slug, rule in products.items() %}<a href="/product/{{ slug }}">{{ rule.name }}</a>{% if not loop.last %}、{% endif %}{% endfor %}。</p>
 <p>以 root 运行时还会检查<strong>运行中 Docker 容器内的系统软件包</strong>（Debian、Ubuntu、Alpine 镜像），通过只读方式读取容器文件，不调用 docker 命令；容器里的漏洞会给出更新镜像的方法。</p>
-<p><strong>Go 编译的程序</strong>（Caddy、frp、Xray、Alist、自己编译的服务等）会读取程序里记录的模块和 Go 版本，对照 Go 官方漏洞库判断，包括只有一个程序的精简容器镜像。程序内置依赖和 Go 标准库的漏洞标为“可能受影响”，因为是否真能被利用取决于程序有没有用到相关功能。</p>
+<p><strong>Go 编译的程序</strong>（Caddy、frp、Xray、Alist、docker compose 与 buildx 插件、自己编译的服务等）会读取程序里记录的模块和 Go 版本，对照 Go 官方漏洞库判断，包括只有一个程序的精简容器镜像。程序内置依赖和 Go 标准库的漏洞标为“可能受影响”，因为是否真能被利用取决于程序有没有用到相关功能。</p>
 <p class="small muted">暂不检查：未运行的镜像、RPM 系统的容器、Python/Node 等语言依赖包、Windows 和 macOS。未列出的问题不代表没有漏洞。</p>
 
 <h2>自建数据源</h2>

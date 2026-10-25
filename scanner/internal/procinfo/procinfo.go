@@ -356,7 +356,9 @@ func newOwnerIndex(h system.Host, o system.OS, inv *system.Inventory) *ownerInde
 				continue
 			}
 			for _, line := range strings.Split(string(data), "\n") {
-				if sharedObject.MatchString(line) || strings.Contains(line, "/bin/") || strings.Contains(line, "/sbin/") {
+				// Docker CLI plugins are programs too (docker compose, buildx).
+				if sharedObject.MatchString(line) || strings.Contains(line, "/bin/") || strings.Contains(line, "/sbin/") ||
+					strings.Contains(line, "/cli-plugins/") {
 					idx.byPath[normalise(line)] = pkg
 				}
 			}

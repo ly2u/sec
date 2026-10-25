@@ -40,7 +40,7 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
 
 - **系统软件包**：Debian 11–13、Ubuntu 20.04/22.04/24.04、Rocky Linux 8/9、AlmaLinux 8/9、Alpine 3.22–3.24。按发行版自己的安全数据判定，能识别“版本号没变但已打补丁”的回移植修复，不会误报。
 - **不经过系统包管理器安装的软件**：宝塔、LNMP/OneinStack、源码编译、官方二进制、nvm 等装的 nginx、PHP、Node.js、OpenSSL、Redis、MySQL 等；以及来自第三方软件源（nginx.org、Docker、NodeSource、sury 等）的软件包。
-- **Go 编译的程序**：Caddy、frp、Xray、Alist、Komari 等。读取程序里记录的模块和 Go 版本，对照 Go 官方漏洞库，并给出下载地址、替换和重启的具体步骤。
+- **Go 编译的程序**：Caddy、frp、Xray、Alist、Komari、docker compose / buildx 插件等。读取程序里记录的模块和 Go 版本，对照 Go 官方漏洞库，并给出下载地址、替换和重启的具体步骤。
 - **运行中的 Docker 容器**：只读检查容器内的系统软件包（不调用 docker 命令），给出更新镜像的方法；只有一个 Go 程序的精简镜像也能检查。
 - **补丁是否生效**：内核更新后没重启、服务还在用升级前的旧库。
 - **先修哪个**：已被在野利用（CISA KEV）、被勒索软件利用、被利用概率（FIRST EPSS）、是否对外提供服务，综合成“立即 / 尽快 / 计划”。

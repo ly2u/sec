@@ -263,11 +263,22 @@ func processes(proc string, pids []int, host bool) []Candidate {
 	return out
 }
 
+// pluginDirs hold Docker CLI plugins (docker compose, docker buildx), Go
+// programs outside any bin directory: from Docker's repository
+// (/usr/libexec), Ubuntu's packages (official, skipped by owner) or put
+// there by hand following Docker's install guide.
+var pluginDirs = []string{
+	"usr/libexec/docker/cli-plugins", "usr/lib/docker/cli-plugins",
+	"usr/local/libexec/docker/cli-plugins", "usr/local/lib/docker/cli-plugins",
+	"root/.docker/cli-plugins",
+}
+
 // Files lists executables in the usual places for software installed by hand
-// (/usr/local/bin, /usr/local/sbin, /opt/*, /opt/*/bin) plus extra paths.
+// (/usr/local/bin, /usr/local/sbin, /opt/*, /opt/*/bin), Docker CLI plugins,
+// plus extra paths.
 func Files(h system.Host, extra []string) []Candidate {
 	var paths []string
-	for _, dir := range []string{"usr/local/bin", "usr/local/sbin"} {
+	for _, dir := range append([]string{"usr/local/bin", "usr/local/sbin"}, pluginDirs...) {
 		paths = append(paths, listDir(h, dir)...)
 	}
 	for _, sub := range listDirs(h, "opt") {

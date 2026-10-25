@@ -486,15 +486,20 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{"usr/local/bin/frpc", "usr/bin/caddy"} {
+	for _, p := range []string{"usr/local/bin/frpc", "usr/bin/caddy", "usr/libexec/docker/cli-plugins/docker-compose", "root/.docker/cli-plugins/docker-buildx"} {
 		os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755)
 		if err := os.WriteFile(filepath.Join(root, p), data, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	status, _ := os.ReadFile(filepath.Join(root, "var/lib/dpkg/status"))
-	put(t, root, "var/lib/dpkg/status", string(status)+"\nPackage: caddy\nStatus: install ok installed\nVersion: 2.10.2\n")
+	put(t, root, "var/lib/dpkg/status", string(status)+"\nPackage: caddy\nStatus: install ok installed\nVersion: 2.10.2\n"+
+		"\nPackage: docker-compose-plugin\nStatus: install ok installed\nVersion: 2.40.0-1~debian.12~bookworm\n")
 	put(t, root, "var/lib/dpkg/info/caddy.list", "/usr\n/usr/bin\n/usr/bin/caddy\n")
+	put(t, root, "var/lib/dpkg/info/docker-compose-plugin.list", "/usr\n/usr/libexec/docker/cli-plugins\n/usr/libexec/docker/cli-plugins/docker-compose\n")
+	put(t, root, "var/lib/apt/lists/download.docker.com_linux_debian_dists_bookworm_InRelease", "Origin: Docker\nLabel: Docker CE\n")
+	put(t, root, "var/lib/apt/lists/download.docker.com_linux_debian_dists_bookworm_stable_binary-amd64_Packages",
+		"Package: docker-compose-plugin\nVersion: 2.40.0-1~debian.12~bookworm\n\nPackage: docker-compose-plugin\nVersion: 2.41.0-1~debian.12~bookworm\n")
 	put(t, root, "var/lib/apt/lists/dl.cloudsmith.io_public_caddy_stable_deb_debian_dists_any-version_main_binary-amd64_Packages", "Package: caddy\nVersion: 2.10.2\n\nPackage: caddy\nVersion: 2.11.7\n")
 
 	s, _ := testutil.NewSigner()
@@ -518,13 +523,17 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 	for _, want := range []string{
 		"caddy                     1 个漏洞    升级即可，见第 1 步",
 		"frpc                      1 个漏洞    等作者发布新版，不急",
+		// Docker CLI plugins: from Docker's repository, and put in by hand.
+		"docker-compose            1 个漏洞    升级即可，见第 1 步",
+		"docker-buildx             1 个漏洞    等作者发布新版，不急",
+		"--only-upgrade caddy docker-compose-plugin",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(text, "caddy（第三方源") {
-		t.Error("caddy was checked as a Go program and must not be listed as not checked")
+	if strings.Contains(text, "caddy（第三方源") || strings.Contains(text, "docker-compose-plugin（第三方源") {
+		t.Error("checked as Go programs, so not listed as not checked")
 	}
 
 	stdout.Reset()

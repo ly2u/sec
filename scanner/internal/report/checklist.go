@@ -1,7 +1,9 @@
 package report
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -62,7 +64,7 @@ func pkgNames(gs []*pkgGroup) string {
 func urgent(g *pkgGroup) bool { return g.priority == "P0" || g.priority == "P1" }
 
 // statusLine is the one-line verdict for the host and its containers.
-func (r *Report) statusLine(t term, fixable []*pkgGroup) {
+func (r *Report) statusLine(t term, fixable []*pkgGroup) string {
 	p0, p1, kev, ransom := 0, 0, 0, 0
 	count := func(gs []*pkgGroup) {
 		for _, g := range gs {
@@ -94,9 +96,11 @@ func (r *Report) statusLine(t term, fixable []*pkgGroup) {
 			l1++
 		}
 	}
+	style := cGreen
 	fmt.Fprint(t, " ")
 	switch {
 	case p0 > 0 && kev > 0:
+		style = cRed
 		t.paint(cRed, "● 有紧急问题")
 		where := ""
 		if hostKEV == 0 {
@@ -108,9 +112,11 @@ func (r *Report) statusLine(t term, fixable []*pkgGroup) {
 			fmt.Fprintf(t, "  %s%d 个软件包的漏洞已被黑客实际利用，请今天处理\n", where, kev)
 		}
 	case p0 > 0:
+		style = cRed
 		t.paint(cRed, "● 有紧急问题")
 		fmt.Fprintf(t, "  %d 个对外服务有严重漏洞，请今天处理\n", p0)
 	case p1 > 0:
+		style = cYellow
 		t.paint(cYellow, "● 建议尽快更新")
 		fmt.Fprintf(t, "  %d 项漏洞被利用的可能性较高，或在对外服务中\n", p1)
 	case items > 0:
@@ -123,6 +129,7 @@ func (r *Report) statusLine(t term, fixable []*pkgGroup) {
 		t.paint(cGreen, "● 状态良好")
 		fmt.Fprintln(t, "  没有发现需要处理的安全问题")
 	}
+	return style
 }
 
 // writeChecklist is the default terminal view.
@@ -149,8 +156,16 @@ func (r *Report) writeChecklist(t term) {
 	fmt.Fprintln(t)
 
 	fixable := r.group(isFixable)
-	r.statusLine(t, fixable)
-	fmt.Fprintln(t)
+	// The check-up block gets a status-coloured bar on its left (colour
+	// terminals only; logs stay plain). No right border: CJK terminals draw
+	// some symbols two cells wide, which would break a box.
+	block := t
+	var buf bytes.Buffer
+	if t.color {
+		block = newTerm(&buf, true)
+	}
+	gutter := r.statusLine(block, fixable)
+	fmt.Fprintln(block)
 
 	steps, ref, popup := r.fixSteps(fixable)
 
@@ -164,7 +179,7 @@ func (r *Report) writeChecklist(t term) {
 		}
 	}
 	if len(l1) == 0 {
-		r.row(t, "系统软件包", "✓", cGreen, fmt.Sprintf("%d 个都是最新", r.Summary.Packages))
+		r.row(block, "系统软件包", "✓", cGreen, fmt.Sprintf("%d 个都是最新", r.Summary.Packages))
 	} else {
 		var now, soon, rest []*pkgGroup
 		for _, g := range l1 {
@@ -181,11 +196,11 @@ func (r *Report) writeChecklist(t term) {
 		if len(now)+len(soon) > 0 {
 			mark, style = "✗", cRed
 		}
-		r.row(t, "系统软件包", mark, style, fmt.Sprintf("%d 个需要更新", len(l1)))
+		r.row(block, "系统软件包", mark, style, fmt.Sprintf("%d 个需要更新", len(l1)))
 		line := func(label, style string, gs []*pkgGroup) {
-			fmt.Fprint(t, "   "+pad("", labelWidth)+"  ")
-			t.paint(style, label)
-			fmt.Fprintln(t, "  "+pkgNames(gs))
+			fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
+			block.paint(style, label)
+			fmt.Fprintln(block, "  "+pkgNames(gs))
 		}
 		if len(now) > 0 {
 			line("立即", cRed, now)
@@ -195,9 +210,9 @@ func (r *Report) writeChecklist(t term) {
 		}
 		switch {
 		case len(rest) > 0 && len(now)+len(soon) > 0:
-			fmt.Fprint(t, "   "+pad("", labelWidth)+"  ")
-			t.paint(cDim, "其他")
-			fmt.Fprintf(t, "  %d 个，跟上面一起升级\n", len(rest))
+			fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
+			block.paint(cDim, "其他")
+			fmt.Fprintf(block, "  %d 个，跟上面一起升级\n", len(rest))
 		case len(rest) > 0:
 			line("包括", cDim, rest)
 		}
@@ -233,12 +248,12 @@ func (r *Report) writeChecklist(t term) {
 				mark, style, text = "✗", cRed, fmt.Sprintf("%d 个需要更新", len(l2))
 			}
 		}
-		r.row(t, "程序", mark, style, text)
+		r.row(block, "程序", mark, style, text)
 		for i, g := range l2 {
 			if i == maxProgRows {
-				fmt.Fprint(t, "   "+pad("", labelWidth)+"  ")
-				t.paint(cDim, fmt.Sprintf("其余 %d 个：secwatch scan --all", len(l2)-maxProgRows))
-				fmt.Fprintln(t)
+				fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
+				block.paint(cDim, fmt.Sprintf("其余 %d 个：secwatch scan --all", len(l2)-maxProgRows))
+				fmt.Fprintln(block)
 				break
 			}
 			tag, tagStyle := "", ""
@@ -246,10 +261,10 @@ func (r *Report) writeChecklist(t term) {
 				tag, tagStyle = "对外服务", cRed
 			}
 			action, actionStyle := r.programAction(g, ref)
-			r.subRow(t, g.pkg, tag, tagStyle, fmt.Sprintf("%d 个漏洞", vulnCount(g)), action, actionStyle)
+			r.subRow(block, g.pkg, tag, tagStyle, fmt.Sprintf("%d 个漏洞", vulnCount(g)), action, actionStyle)
 		}
 	case installs > 0 && r.L2Evaluated:
-		r.row(t, "程序", "✓", cGreen, fmt.Sprintf("%d 个单独安装的程序都没有发现问题", installs))
+		r.row(block, "程序", "✓", cGreen, fmt.Sprintf("%d 个单独安装的程序都没有发现问题", installs))
 	}
 
 	// Containers.
@@ -265,9 +280,9 @@ func (r *Report) writeChecklist(t term) {
 		clean := len(r.Containers) - len(toFix) - len(skipped)
 		switch {
 		case len(toFix) == 0 && len(skipped) == 0:
-			r.row(t, "容器", "✓", cGreen, fmt.Sprintf("%d 个都没有发现问题", len(r.Containers)))
+			r.row(block, "容器", "✓", cGreen, fmt.Sprintf("%d 个都没有发现问题", len(r.Containers)))
 		case len(toFix) == 0:
-			r.row(t, "容器", "·", cDim, fmt.Sprintf("%d 个未能检查", len(skipped)))
+			r.row(block, "容器", "·", cDim, fmt.Sprintf("%d 个未能检查", len(skipped)))
 		default:
 			mark, style := "!", cYellow
 			for _, c := range toFix {
@@ -278,7 +293,7 @@ func (r *Report) writeChecklist(t term) {
 			if mark == "✗" {
 				style = cRed
 			}
-			r.row(t, "容器", mark, style, fmt.Sprintf("%d 个建议更新", len(toFix)))
+			r.row(block, "容器", mark, style, fmt.Sprintf("%d 个建议更新", len(toFix)))
 		}
 		for _, c := range toFix {
 			n := len(c.Report.group(isFixable))
@@ -286,20 +301,20 @@ func (r *Report) writeChecklist(t term) {
 			if i, ok := ref["ctr:"+c.Label()]; ok {
 				action += fmt.Sprintf("，见第 %d 步", i)
 			}
-			r.subRow(t, c.Label(), c.OS, "", fmt.Sprintf("%d 个软件包", n), action, cCmd)
+			r.subRow(block, c.Label(), c.OS, "", fmt.Sprintf("%d 个软件包", n), action, cCmd)
 		}
 		if len(toFix) > 0 || len(skipped) > 0 {
 			for _, c := range skipped {
-				r.subRow(t, c.Label(), c.OS, "", "", "未检查："+c.Reason, cDim)
+				r.subRow(block, c.Label(), c.OS, "", "", "未检查："+c.Reason, cDim)
 			}
 			if clean > 0 {
-				fmt.Fprint(t, "   "+pad("", labelWidth)+"  ")
-				t.paint(cDim, fmt.Sprintf("其余 %d 个没有发现问题", clean))
-				fmt.Fprintln(t)
+				fmt.Fprint(block, "   "+pad("", labelWidth)+"  ")
+				block.paint(cDim, fmt.Sprintf("其余 %d 个没有发现问题", clean))
+				fmt.Fprintln(block)
 			}
 		}
 	case r.L2 != nil && len(r.L2.Containers) > 0 && !r.containersScanned:
-		r.row(t, "容器", "·", cDim, "有容器在运行，但没有检查（需要以 root 运行）")
+		r.row(block, "容器", "·", cDim, "有容器在运行，但没有检查（需要以 root 运行）")
 	}
 
 	// Waiting for the distribution's patches.
@@ -336,11 +351,11 @@ func (r *Report) writeChecklist(t term) {
 		if who == "" {
 			who = "发行版"
 		}
-		fmt.Fprint(t, "   "+pad("等待补丁", labelWidth))
-		t.paint(cDim, "·")
-		fmt.Fprint(t, " "+text+"值得关注")
-		t.paint(cDim, "  "+who+" 还没发布修复，无需操作")
-		fmt.Fprintln(t)
+		fmt.Fprint(block, "   "+pad("等待补丁", labelWidth))
+		block.paint(cDim, "·")
+		fmt.Fprint(block, " "+text+"值得关注")
+		block.paint(cDim, "  "+who+" 还没发布修复，无需操作")
+		fmt.Fprintln(block)
 	}
 
 	// Everything else worth knowing, one line each.
@@ -349,9 +364,13 @@ func (r *Report) writeChecklist(t term) {
 		if i == 0 {
 			label = "留意"
 		}
-		fmt.Fprint(t, "   "+pad(label, labelWidth))
-		t.paint(cDim, "·")
-		fmt.Fprintln(t, " "+l)
+		fmt.Fprint(block, "   "+pad(label, labelWidth))
+		block.paint(cDim, "·")
+		fmt.Fprintln(block, " "+l)
+	}
+
+	if t.color {
+		writeGutter(t, buf.String(), gutter)
 	}
 
 	// What to do.
@@ -438,4 +457,12 @@ func (r *Report) programAction(g *pkgGroup, ref map[string]int) (string, string)
 		return fmt.Sprintf("需要单独更新，见第 %d 步", i), cCmd
 	}
 	return "等作者发布新版，不急", cDim
+}
+
+// writeGutter copies an already sanitised block to the terminal with a
+// coloured bar in front of every line.
+func writeGutter(t term, block, style string) {
+	for _, line := range strings.Split(strings.TrimSuffix(block, "\n"), "\n") {
+		io.WriteString(t.raw, "\x1b["+style+"m▌\x1b[0m"+line+"\n")
+	}
 }

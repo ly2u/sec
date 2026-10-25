@@ -75,3 +75,29 @@ func TestChecklistOnMostlyCleanHost(t *testing.T) {
 		t.Errorf("%d lines", n)
 	}
 }
+
+func TestChecklistGutterOnColourTerminals(t *testing.T) {
+	r := racknerd()
+	r.Color = true
+	out := render(r)
+	bar := "\x1b[1;32m▌\x1b[0m"
+	if !strings.Contains(out, bar+" \x1b[1;32m● 状态良好\x1b[0m") || !strings.Contains(out, bar+"   系统软件包") {
+		t.Errorf("green bar in front of the check-up block:\n%q", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "建议这样做") || strings.Contains(line, "LY2U SecWatch") {
+			if strings.Contains(line, "▌") {
+				t.Errorf("only the check-up block has the bar: %q", line)
+			}
+		}
+	}
+	urgent := outdatedHost(false)
+	urgent.Color = true
+	if !strings.Contains(render(urgent), "\x1b[1;31m▌\x1b[0m") {
+		t.Error("red bar when something is urgent")
+	}
+	r.Color = false
+	if strings.Contains(render(r), "▌") {
+		t.Error("plain output (logs, pipes) has no bar")
+	}
+}

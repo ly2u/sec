@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -252,6 +253,7 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	}
 
 	update := newerRelease(Version, res.LatestScanner)
+	rep.Hostname = hostname(host)
 	if *only != "" {
 		rep.FilterPackage(*only)
 	}
@@ -565,3 +567,19 @@ func skipSelf(progs []gobin.Program) []gobin.Program {
 	}
 	return out
 }
+
+// hostname names the scanned machine for the report header.
+func hostname(h system.Host) string {
+	var name string
+	if h.Live() {
+		name, _ = os.Hostname()
+	} else if data, err := h.ReadFile("etc/hostname"); err == nil {
+		name = strings.TrimSpace(string(data))
+	}
+	if !hostRe.MatchString(name) {
+		return ""
+	}
+	return name
+}
+
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$`)

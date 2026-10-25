@@ -19,13 +19,10 @@ import (
 // Everything else is one command away (--pkg NAME, --all).
 
 const (
-	tableRows  = 15 // most rows in the default table
-	tableFill  = 8  // with few P0/P1 packages, fill the table with P2 up to this many rows
 	watchNames = 3  // names listed per "also note" line
 	pkgCVERows = 15 // vulnerabilities listed per package in the --pkg view
 )
 
-var shortLabel = map[string]string{"P0": "立即", "P1": "尽快", "P2": "计划", "P3": "了解"}
 
 // ANSI styles, used only when the output is a colour terminal.
 const (
@@ -223,79 +220,8 @@ func (r *Report) writeBrief(t term) {
 	fmt.Fprintln(t)
 }
 
-// writeSummary is the default terminal view.
-func (r *Report) writeSummary(t term) {
-	r.writeBrief(t)
-	fixable := r.group(isFixable)
-	count := map[string]int{}
-	kevPkgs := 0
-	for _, g := range fixable {
-		count[g.priority]++
-		if g.kev {
-			kevPkgs++
-		}
-	}
-	fmt.Fprintln(t)
-	who := ""
-	if len(r.Containers) > 0 {
-		who = "本机 "
-	}
-	if len(fixable) == 0 {
-		t.paint(cGreen, "✓ "+strings.TrimSpace(who)+"没有需要升级的软件包")
-		fmt.Fprintln(t, "：已安装的版本均包含发行版已发布的全部安全修复。")
-	} else {
-		switch {
-		case count["P0"] > 0:
-			t.paint(cRed, "✗ 高风险")
-		case count["P1"] > 0:
-			t.paint(cYellow, "! 需要处理")
-		default:
-			t.paint(cBold, "! 有安全更新")
-		}
-		msg := fmt.Sprintf("：%s%d 个软件包有安全更新", who, len(fixable))
-		if n := count["P0"] + count["P1"]; n > 0 {
-			msg += fmt.Sprintf("，%d 个需要尽快处理", n)
-		}
-		if kevPkgs > 0 {
-			msg += fmt.Sprintf("，其中 %d 个的漏洞已被在野利用", kevPkgs)
-		}
-		fmt.Fprintln(t, msg)
-		r.writeTable(t, fixable)
-	}
-	r.writeContainers(t)
-	r.writeWatch(t, len(fixable) == 0)
-	switch {
-	case r.inContainer != nil:
-		if len(fixable) > 0 {
-			r.writeContainerFix(t)
-		}
-	case len(fixable) > 0 || len(r.containersToFix()) > 0:
-		r.writeFix(t, fixable)
-	}
-
-	fmt.Fprintln(t)
-	example := "<软件包名>"
-	candidates := fixable
-	if len(candidates) == 0 {
-		candidates = r.group(func(f match.Finding) bool { return isUnfixed(f) && Notable(f) })
-	}
-	if len(candidates) > 0 {
-		if a := pkgArg(candidates[0].pkg); a != "" {
-			example = a
-		}
-	}
-	prefix := "secwatch scan "
-	if r.inContainer != nil {
-		prefix += "--container " + r.inContainer.Label() + " "
-	}
-	t.paint(cDim, "看某个软件包的漏洞和修复命令：")
-	t.paint(cCmd, prefix+"--pkg "+example)
-	fmt.Fprintln(t)
-	t.paint(cDim, "看完整报告（全部漏洞、验证命令、参考链接）：")
-	t.paint(cCmd, prefix+"--all")
-	fmt.Fprintln(t)
-	r.writeUpdate(t)
-}
+// writeSummary is the default terminal view (see checklist.go).
+func (r *Report) writeSummary(t term) { r.writeChecklist(t) }
 
 var argSafe = regexp.MustCompile(`^[A-Za-z0-9.+_-]+( [A-Za-z0-9.+_-]+)*$`)
 
@@ -311,55 +237,12 @@ func pkgArg(name string) string {
 	return name
 }
 
-func (r *Report) writeTable(t term, fixable []*pkgGroup) {
-	var rows, rest []*pkgGroup
-	for _, g := range fixable {
-		if (g.priority == "P0" || g.priority == "P1") && len(rows) < tableRows {
-			rows = append(rows, g)
-		} else {
-			rest = append(rest, g)
-		}
-	}
-	for len(rows) < tableFill && len(rest) > 0 && rest[0].priority == "P2" {
-		rows, rest = append(rows, rest[0]), rest[1:]
-	}
-	w := width("软件包")
-	for _, g := range rows {
-		if n := width(g.pkg); n > w {
-			w = n
-		}
-	}
-	if w > 16 {
-		w = 16
-	}
-	fmt.Fprintln(t)
-	t.paint(cDim, fmt.Sprintf("  %s  %s  %s  %s", pad("优先级", 7), pad("软件包", w), "漏洞数", "风险要点"))
-	fmt.Fprintln(t)
-	for _, g := range rows {
-		fmt.Fprint(t, "  ")
-		t.paint(prioColor[g.priority], g.priority+" "+shortLabel[g.priority])
-		fmt.Fprintf(t, "  %s  %6d  %s\n", pad(clip(g.pkg, w), w), vulnCount(g), reasons(g))
-	}
-	if len(rest) > 0 {
-		left := map[string]int{}
-		for _, g := range rest {
-			left[g.priority]++
-		}
-		label := map[string]string{"P0": "立即处理", "P1": "尽快处理", "P2": "计划处理", "P3": "低优先级"}
-		var parts []string
-		for _, p := range []string{"P0", "P1", "P2", "P3"} {
-			if n := left[p]; n > 0 {
-				parts = append(parts, fmt.Sprintf("%d 个%s", n, label[p]))
-			}
-		}
-		t.paint(cDim, fmt.Sprintf("  另有 %s的软件包未列出（secwatch scan --all 查看）", strings.Join(parts, "、")))
-		fmt.Fprintln(t)
-	}
-}
-
-// writeWatch prints the one-line notes that do not fit the table.
-func (r *Report) writeWatch(t term, clean bool) {
+// watchLines are the one-line notes that fit no other row of the summary.
+func (r *Report) watchLines() []string {
 	var lines []string
+	if r.Kernel.NewerInstalled && r.Kernel.NewestVersion != "" {
+		lines = append(lines, "新内核 "+r.Kernel.NewestVersion+" 已安装，重启后才会生效")
+	}
 	names := func(list []string) string {
 		if len(list) > watchNames {
 			return strings.Join(list[:watchNames], "、") + fmt.Sprintf(" 等 %d 个", len(list))
@@ -386,24 +269,6 @@ func (r *Report) writeWatch(t term, clean bool) {
 		}
 		lines = append(lines, fmt.Sprintf("修复只在 Ubuntu Pro（ESM）中提供：%s（--all 查看启用方法）", names(ps)))
 	}
-	if s := r.Summary; s.Unfixed > 0 || (clean && s.MinorUnfixed > 0) {
-		line := fmt.Sprintf("发行版暂无修复 %d 项（目前没有可执行的升级）", s.Unfixed)
-		if notable := r.group(func(f match.Finding) bool { return isUnfixed(f) && Notable(f) }); len(notable) > 0 {
-			var ps []string
-			for _, g := range notable {
-				p := g.pkg
-				if id := headline(g); id != "" {
-					p += " " + id
-				}
-				ps = append(ps, p)
-			}
-			line += fmt.Sprintf("，值得关注 %d 项：%s", s.UnfixedNotable, names(ps))
-		}
-		if clean && s.MinorUnfixed > 0 {
-			line += fmt.Sprintf("；另有 %d 项被发行版评为可忽略", s.MinorUnfixed)
-		}
-		lines = append(lines, line)
-	}
 	if unknown := r.group(func(f match.Finding) bool { return f.Status == match.Unknown }); len(unknown) > 0 {
 		lines = append(lines, fmt.Sprintf("无法判定：%d 个软件包（--all 查看原因）", len(unknown)))
 	}
@@ -420,13 +285,6 @@ func (r *Report) writeWatch(t term, clean bool) {
 		// Without upstream data the scanner adds a note saying so; no second line here.
 		if len(r.L2NoData) > 0 {
 			uncovered = append(uncovered, names(r.L2NoData)+"（暂无上游数据）")
-		}
-		if len(r.L2.Containers) > 0 && !r.containersScanned {
-			var ps []string
-			for _, c := range r.L2.Containers {
-				ps = append(ps, c.Name)
-			}
-			uncovered = append(uncovered, "容器内的 "+names(dedupe(ps))+"（可用 trivy image 扫描镜像）")
 		}
 	}
 	if len(uncovered) > 0 {
@@ -449,19 +307,14 @@ func (r *Report) writeWatch(t term, clean bool) {
 		lines = append(lines, n)
 	}
 
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintln(t)
-	t.paint(cBold, "还需留意")
-	fmt.Fprintln(t)
-	for _, l := range lines {
-		fmt.Fprintf(t, "  · %s\n", l)
-	}
+	return lines
 }
 
-// writeFix is the numbered list of commands that ends the summary.
-func (r *Report) writeFix(t term, fixable []*pkgGroup) {
+// fixSteps are the numbered commands that end the summary. ref maps rows to
+// their step ("upgrade", "pkg:NAME", "ctr:NAME"); popup asks for the apt
+// prompt hint. No steps when nothing can be done now.
+func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[string]int, popup bool) {
+	ref = map[string]int{}
 	distro, kernel, exposed := false, false, false
 	var separate, thirdParty []*pkgGroup
 	for _, g := range fixable {
@@ -476,10 +329,6 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 		exposed = exposed || g.exposed || r.stalePackages[g.pkg]
 		kernel = kernel || hasKernel(g)
 	}
-	fmt.Fprintln(t)
-	t.paint(cBold, "怎么修（依次执行）")
-	fmt.Fprintln(t)
-	var steps [][2]string
 	cmd := func(c, comment string) { steps = append(steps, [2]string{c, comment}) }
 	host := len(fixable) > 0
 	var thirdBins, units []string
@@ -495,36 +344,46 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	case distro:
 		// Third-party repositories are upgraded by the same command.
 		cmd(r.fullUpgradeCommand(), "安装全部安全更新")
+		ref["upgrade"] = len(steps)
 	case len(thirdBins) > 0:
 		cmd(r.upgradeCommand(dedupe(thirdBins)), "从原来的第三方软件源升级")
+		ref["upgrade"] = len(steps)
+		// Only programs outside the distribution: restarting them is enough.
+		if len(units) > 0 {
+			cmd("sudo systemctl restart "+strings.Join(dedupe(units), " "), "让新版本生效，不用重启服务器")
+		}
 	}
-	for i, g := range separate {
-		if i == 4 {
+	listed := 0
+	for _, g := range separate {
+		if listed == 4 {
 			break
 		}
 		a := pkgArg(g.pkg)
 		if a == "" {
 			continue
 		}
+		if g.goProg && g.target == "" && !urgent(g) {
+			continue // only bundled code affected: nothing to do until a new release
+		}
+		listed++
 		comment := fmt.Sprintf("%s 不是软件包安装的，系统升级不会更新它，这里有具体步骤", g.pkg)
 		if g.goProg {
 			comment = fmt.Sprintf("%s（%s）需要单独更新，这里有下载地址和具体步骤", g.pkg, g.findings[0].Path)
 		}
 		cmd("secwatch scan --pkg "+a, comment)
+		ref["pkg:"+g.pkg] = len(steps)
 	}
 	for i, c := range r.containersToFix() {
 		if i == 3 {
 			break
 		}
-		cmd("secwatch scan --container "+c.Label(), "容器 "+c.Label()+" 要靠更新镜像修复，这里有方法")
+		cmd("secwatch scan --container "+c.Label(), "查看重建镜像的步骤")
+		ref["ctr:"+c.Label()] = len(steps)
 	}
 	switch {
 	case !host:
 	case !distro:
-		// Only programs outside the distribution: restarting them is enough.
-		if len(units) > 0 {
-			cmd("sudo systemctl restart "+strings.Join(dedupe(units), " "), "让新版本生效，不需要重启服务器")
-		}
+		// Restarted right after their upgrade above.
 	case kernel:
 		cmd("sudo reboot", "让新内核和已升级的服务生效")
 	case exposed:
@@ -536,28 +395,11 @@ func (r *Report) writeFix(t term, fixable []*pkgGroup) {
 	default:
 		cmd("sudo reboot", "让升级后的库生效；也可以只重启用到这些软件的服务")
 	}
+	if len(steps) == 0 {
+		return nil, ref, false
+	}
 	cmd("secwatch scan", "再查一次，确认已修复")
-	if distro && r.kind == version.Deb {
-		defer func() {
-			t.paint(cDim, "  升级中的弹窗：问是否替换配置文件（如 sshd_config）时选“保留当前版本”（keep the local version），")
-			fmt.Fprintln(t)
-			t.paint(cDim, "  以免改掉 SSH 端口等设置；问重启哪些服务（Daemons using outdated libraries）时直接回车")
-			fmt.Fprintln(t)
-		}()
-	}
-	// Align the comments when the commands are of similar length.
-	w := 0
-	for _, st := range steps {
-		if n := width(st[0]); n > w && n <= 64 {
-			w = n
-		}
-	}
-	for i, st := range steps {
-		fmt.Fprintf(t, "  %d. ", i+1)
-		t.paint(cCmd, st[0])
-		t.paint(cDim, strings.Repeat(" ", max(w-width(st[0]), 0)+2)+"# "+st[1])
-		fmt.Fprintln(t)
-	}
+	return steps, ref, distro && r.kind == version.Deb
 }
 
 // FilterPackage limits the text report to one package (--pkg). The name is

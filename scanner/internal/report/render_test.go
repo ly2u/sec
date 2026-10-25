@@ -60,48 +60,32 @@ func render(r *Report) string {
 	return b.String()
 }
 
-func TestSummaryIsATableWithVerdictAndCommands(t *testing.T) {
+func TestSummaryIsAChecklist(t *testing.T) {
 	out := render(outdatedHost(false))
 	t.Log("\n" + out)
-	if !strings.Contains(out, "✗ 高风险：24 个软件包有安全更新，3 个需要尽快处理，其中 1 个的漏洞已被在野利用") {
-		t.Fatalf("verdict missing or wrong:\n%s", out)
-	}
-	// One row per package, counted by package: openssh has two CVEs.
-	for _, row := range []string{
-		"  P0 立即  inetutils       1  已被在野利用 · 严重 9.8\n",
-		"  P0 立即  openssh         2  严重 9.8 · 对外服务\n",
-		"  P1 尽快  linux           1  利用概率 40% · 高危 7.8 · 需重启\n",
-		"  P2 计划  lib00           1  高危 7.5\n",
-	} {
-		if !strings.Contains(out, row) {
-			t.Errorf("table row missing %q", row)
-		}
-	}
-	// Few P0/P1 rows: P2 fills the table up to tableFill, the rest is counted.
-	if !strings.Contains(out, "另有 15 个计划处理、1 个低优先级的软件包未列出") {
-		t.Errorf("remaining packages must be summarised in one line:\n%s", out)
-	}
-	for _, noisy := range []string{"验证：", "dpkg-query", "--only-upgrade", "参考：", "https://", "1:9.2p1-2"} {
-		if strings.Contains(out, noisy) {
-			t.Errorf("default view must not contain %q", noisy)
-		}
-	}
 	for _, want := range []string{
-		"怎么修（依次执行）",
-		"  1. sudo apt-get update && sudo apt-get upgrade --with-new-pkgs  # 安装全部安全更新",
-		"  2. sudo reboot",
-		"# 让新内核和已升级的服务生效",
-		"  3. secwatch scan",
-		"# 再查一次，确认已修复",
-		"secwatch scan --pkg inetutils",
-		"选“保留当前版本”（keep the local version）",
-		"secwatch scan --all",
+		"● 有紧急问题  1 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"   系统软件包  ✗ 24 个需要更新",
+		"立即  inetutils · openssh",
+		"尽快  linux(需重启)",
+		"其他  21 个，跟上面一起升级",
+		" 建议这样做",
+		"   1  sudo apt-get update && sudo apt-get upgrade --with-new-pkgs  # 安装全部安全更新",
+		"   2  sudo reboot",
+		"   3  secwatch scan",
+		"升级中如有弹窗",
+		"看详情  secwatch scan --pkg inetutils     完整报告  secwatch scan --all",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if lines := strings.Count(out, "\n"); lines > 30 {
+	for _, noisy := range []string{"验证：", "dpkg-query", "--only-upgrade", "参考：", "https://", "1:9.2p1-2", "CVE-"} {
+		if strings.Contains(out, noisy) {
+			t.Errorf("default view must not contain %q", noisy)
+		}
+	}
+	if lines := strings.Count(out, "\n"); lines > 24 {
 		t.Errorf("default report too long: %d lines", lines)
 	}
 	if strings.Contains(out, "\x1b[") {
@@ -114,7 +98,7 @@ func TestSummaryColoursOnlyFromConstants(t *testing.T) {
 	r.Color = true
 	r.Findings[0].Package = "inet\x1b[2Jutils"
 	out := render(r)
-	if !strings.Contains(out, "\x1b[1;31m✗ 高风险\x1b[0m") {
+	if !strings.Contains(out, "\x1b[1;31m● 有紧急问题\x1b[0m") {
 		t.Errorf("verdict should be red on a colour terminal:\n%q", out)
 	}
 	if strings.Contains(out, "\x1b[2J") {
@@ -174,7 +158,7 @@ func TestCleanHostHasNoNextSteps(t *testing.T) {
 	o := system.OS{PrettyName: "Debian GNU/Linux 13 (trixie)", Distro: "debian", Release: "13", Kind: version.Deb}
 	r := Build("v0.1.1", o, &system.Inventory{}, match.Result{PackagesScanned: 352}, nil, DataInfo{KeyID: "D7B7CA69ADC798BC"}, nil, false, nil, nil)
 	out := render(r)
-	if !strings.Contains(out, "✓ 没有需要升级的软件包") || strings.Contains(out, "怎么修") {
+	if !strings.Contains(out, "● 状态良好  没有发现需要处理的安全问题") || !strings.Contains(out, "系统软件包  ✓ 352 个都是最新") || strings.Contains(out, "建议这样做") {
 		t.Errorf("clean host:\n%s", out)
 	}
 }
@@ -191,7 +175,7 @@ func TestServiceNamesInCommandsAreWhitelisted(t *testing.T) {
 	r.Findings = keep
 	r.Runtime.Listeners = append(r.Runtime.Listeners, procinfo.Listener{Public: true, Process: "evil;rm -rf /"})
 	out := render(r)
-	steps := out[strings.LastIndex(out, "怎么修"):]
+	steps := out[strings.LastIndex(out, "建议这样做"):]
 	if !strings.Contains(steps, "至少重启对外服务：sshd、caddy\n") || strings.Contains(steps, "evil") {
 		t.Errorf("service names in suggested actions must pass the whitelist:\n%s", steps)
 	}
@@ -280,12 +264,16 @@ func TestRealisticHostFitsOneScreen(t *testing.T) {
 		t.Errorf("default report should fit one screen, got %d lines", lines)
 	}
 	for _, want := range []string{
-		"✗ 高风险：70 个软件包有安全更新，13 个需要尽快处理，其中 4 个的漏洞已被在野利用",
-		"  P0 立即  linux        7887  已被在野利用 · 利用概率 94% · 严重 10.0 · 需重启",
-		"  P1 尽快  Node.js         1  利用概率 25% · 严重 9.2 · 第三方源",
-		"另有 42 个计划处理、15 个低优先级的软件包未列出",
-		"发行版暂无修复 2493 项（目前没有可执行的升级），值得关注 2 项：glibc CVE-2026-",
-		"未检查：caddy（第三方源，请关注其官方公告）；容器内的 mariadbd（可用 trivy image 扫描镜像）",
+		"● 有紧急问题  4 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"   系统软件包  ✗ 69 个需要更新",
+		"立即  linux(需重启) · inetutils · freetype · nghttp2 · openssh · krb5 · openssl",
+		"尽快  xz-utils · pcre2 · pam · systemd · sqlite3",
+		"其他  57 个，跟上面一起升级",
+		"   程序        ✗ 1 个需要更新",
+		"Node.js                   1 个漏洞    升级即可，见第 1 步",
+		"   容器        · 有容器在运行，但没有检查（需要以 root 运行）",
+		"   等待补丁    · glibc、内核各 1 项值得关注  Debian 还没发布修复，无需操作",
+		"   留意        · 未检查：caddy（第三方源，请关注其官方公告）",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
@@ -297,7 +285,7 @@ func TestRealisticHostFitsOneScreen(t *testing.T) {
 			r.Findings[i].Ransomware = true
 		}
 	}
-	if !strings.Contains(render(r), "  P0 立即  inetutils       5  已被勒索软件利用 · 利用概率 99% · 严重 9.8") {
+	if out := render(r); !strings.Contains(out, "（其中 1 个被勒索软件利用）") || !strings.Contains(out, "inetutils(勒索软件在用)") {
 		t.Error("ransomware use is the strongest signal and replaces the plain KEV mark")
 	}
 	if strings.Contains(out, "manifest") {
@@ -408,9 +396,10 @@ func TestThirdPartyOnlyFixRestartsServices(t *testing.T) {
 	out := render(r)
 	t.Log("\n" + out)
 	for _, want := range []string{
-		"1. sudo apt-get update && sudo apt-get install --only-upgrade caddy",
-		"2. sudo systemctl restart caddy.service",
-		"不需要重启服务器",
+		"1  sudo apt-get update && sudo apt-get install --only-upgrade caddy",
+		"2  sudo systemctl restart caddy.service",
+		"不用重启服务器",
+		"caddy          对外服务   1 个漏洞    升级即可，见第 1 步",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)

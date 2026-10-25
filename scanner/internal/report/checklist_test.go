@@ -1,0 +1,77 @@
+package report
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ly2u/sec/scanner/internal/container"
+	"github.com/ly2u/sec/scanner/internal/l2"
+	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/procinfo"
+	"github.com/ly2u/sec/scanner/internal/system"
+	"github.com/ly2u/sec/scanner/internal/version"
+)
+
+func racknerd() *Report {
+	var out []match.Finding
+	goF := func(name, path, method, bin, unit, mod, modv, fix, comp string, n int, cvss float64) {
+		for i := 0; i < n; i++ {
+			f := match.Finding{ID: "CVE-2026-" + name + string(rune('a'+i%26)) + string(rune('a'+i/26)), Package: name, InstalledVersion: "1.0.0",
+				Layer: "L2", Method: method, Path: path, Module: mod, ModuleVersion: modv, Component: comp, Unit: unit,
+				Status: match.PotentiallyAffected, Fix: match.FixUpgrade, FixedVersion: fix, CVSS: f64(cvss)}
+			if bin != "" {
+				f.Binaries = []string{bin}
+			}
+			f.CVEs = []string{f.ID}
+			out = append(out, f)
+		}
+	}
+	goF("caddy", "/usr/bin/caddy", "package", "caddy", "caddy.service", "stdlib", "1.25.0", "1.25.9", "Go 1.25.0 标准库", 14, 9.8)
+	goF("komari-agent", "/opt/komari/agent", "go", "", "komari-agent.service", "stdlib", "1.24.0", "1.26.10", "Go 1.24.0 标准库", 98, 10)
+	out = append(out,
+		match.Finding{ID: "CVE-2026-5450", CVEs: []string{"CVE-2026-5450"}, Package: "glibc", Binaries: []string{"libc6"}, InstalledVersion: "2.36-9+deb12u14", Status: match.ConfirmedAffected, Fix: match.FixNone, CVSS: f64(9.8), Layer: "L1"},
+		match.Finding{ID: "CVE-2025-22037", CVEs: []string{"CVE-2025-22037"}, Package: "linux", Binaries: []string{"linux-image-amd64"}, InstalledVersion: "6.1.190-1", Status: match.ConfirmedAffected, Fix: match.FixNone, CVSS: f64(7.5), EPSS: f64(0.7), Layer: "L1"})
+	rt := &procinfo.Report{Listeners: []procinfo.Listener{{Address: "::", Port: 443, Public: true, Process: "caddy"}}, Exposed: map[string]bool{"caddy": true, "glibc": true}}
+	o := system.OS{PrettyName: "Debian GNU/Linux 12 (bookworm)", Distro: "debian", Release: "12", Kind: version.Deb}
+	res := match.Result{PackagesScanned: 730, Kernel: match.KernelState{Running: "6.1.0-54-amd64"}}
+	r := Build("v0.1.5", o, &system.Inventory{}, res, rt, DataInfo{GeneratedAt: time.Date(2026, 10, 25, 1, 18, 0, 0, time.UTC), KeyID: "X", FromCache: true}, nil, false,
+		&l2.Result{Installs: []l2.Install{{ProductName: "caddy", Version: "2.10.2"}, {ProductName: "komari-agent", Version: "1.5.0"}}}, &l2.Outcome{Findings: out})
+	r.Hostname = "racknerd-5a83f4d"
+	var ctr []match.Finding
+	for i := 0; i < 8; i++ {
+		ctr = append(ctr, match.Finding{ID: "CVE-2026-90" + string(rune('0'+i)), CVEs: []string{"CVE-2026-90" + string(rune('0'+i))}, Package: "pkg" + string(rune('a'+i)), Binaries: []string{"pkg" + string(rune('a'+i))}, InstalledVersion: "1", FixedVersion: "2", Status: match.ConfirmedAffected, Fix: match.FixUpgrade, CVSS: f64(6.5), Layer: "L1"})
+	}
+	co := system.OS{PrettyName: "Debian GNU/Linux 13 (trixie)", Distro: "debian", Release: "13", Kind: version.Deb}
+	sub := Build("v0.1.5", co, &system.Inventory{}, match.Result{Findings: ctr, PackagesScanned: 120}, nil, DataInfo{KeyID: "X"}, nil, false, nil, nil)
+	r.AddContainers([]ContainerResult{{Target: container.Target{ID: "abc", Name: "qqbot-vps-api"}, OS: "Debian 13", Status: ContainerScanned, Report: sub}}, true)
+	return r
+}
+
+// The first real users' VPS after upgrading: only programs and a container
+// left, which must read as "fine, three things to update" with exact steps.
+func TestChecklistOnMostlyCleanHost(t *testing.T) {
+	out := render(racknerd())
+	t.Log("\n" + out)
+	for _, want := range []string{
+		"LY2U SecWatch v0.1.5  racknerd-5a83f4d · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查",
+		" ● 状态良好  没有需要立即处理的漏洞，有 3 项建议更新",
+		"   系统软件包  ✓ 730 个都是最新",
+		"   程序        ! 2 个建议更新",
+		"caddy          对外服务   14 个漏洞   升级即可，见第 1 步",
+		"komari-agent              98 个漏洞   等作者发布新版，不急",
+		"qqbot-vps-api  Debian 13  8 个软件包  重建镜像，见第 3 步",
+		"   等待补丁    · glibc、内核各 1 项值得关注  Debian 还没发布修复，无需操作",
+		"   2  sudo systemctl restart caddy.service",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(out, "reboot") || strings.Contains(out, "弹窗") {
+		t.Error("nothing from the distribution to upgrade: no reboot, no apt prompt hint")
+	}
+	if n := strings.Count(out, "\n"); n > 22 {
+		t.Errorf("%d lines", n)
+	}
+}

@@ -37,31 +37,27 @@ sudo secwatch scan --all           # 完整报告：全部结果、参考链接�
 sudo secwatch scan --format json   # 给脚本和监控用</code></pre>
 <p>用 root 运行才能完整检查：哪些服务对公网监听、升级后哪些进程还在使用旧的库、内核是否需要重启。非 root 也能运行，但这几项会缺失。</p>
 
-<h3>示例输出（节选）</h3>
-<p>一台很久没升级的 Debian 12：一行结论，一张表列出最该处理的软件包和原因，最后是照着执行的修复命令。想看细节，再用 <code>--pkg</code> 或 <code>--all</code>。</p>
-<pre><code>LY2U SecWatch v0.1.2 · Debian GNU/Linux 12 (bookworm) · 内核 6.1.0-9-amd64
-已检查 729 个软件包 · 数据 2026-10-24 04:11 UTC（在线获取，签名已校验）· 只读，未修改系统、未上传数据
+<h3>示例输出</h3>
+<p>一行结论，然后按“系统软件包 / 程序 / 容器 / 等待补丁”逐项说明问题和处理方式，最后给出照着执行的命令。想看细节，再用 <code>--pkg</code> 或 <code>--all</code>。</p>
+<pre><code>LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查
 
-✗ 高风险：70 个软件包有安全更新，13 个需要尽快处理，其中 4 个的漏洞已被在野利用
+ ● 状态良好  没有需要立即处理的漏洞，有 3 项建议更新
 
-  优先级   软件包     漏洞数  风险要点
-  P0 立即  linux        7887  已被在野利用 · 利用概率 94% · 严重 10.0 · 需重启
-  P0 立即  inetutils       5  已被在野利用 · 利用概率 99% · 严重 9.8
-  P0 立即  openssh        17  利用概率 100% · 严重 9.8 · 对外服务
-  P1 尽快  Node.js        35  利用概率 25% · 严重 9.2 · 第三方源
-  ……
-  另有 42 个计划处理、15 个低优先级的软件包未列出（secwatch scan --all 查看）
+   系统软件包  ✓ 730 个都是最新
+   程序        ! 2 个建议更新
+                 caddy          对外服务   14 个漏洞   升级即可，见第 1 步
+                 komari-agent              98 个漏洞   等作者发布新版，不急
+   容器        ! 1 个建议更新
+                 my-api         Debian 13  8 个软件包  重建镜像，见第 3 步
+   等待补丁    · glibc、内核各 1 项值得关注  Debian 还没发布修复，无需操作
 
-容器（2 个运行中，检查了容器内的系统软件包）
-  容器     系统          结果
-  mariadb  Ubuntu 24.04  ✗ 2 个需要尽快处理（共 9 个软件包有更新）
-  app                    未检查：精简镜像（没有系统信息和软件包数据库）
+ 建议这样做
+   1  sudo apt-get update &amp;&amp; sudo apt-get install --only-upgrade caddy
+   2  sudo systemctl restart caddy.service
+   3  secwatch scan --container my-api
+   4  secwatch scan
 
-怎么修（依次执行）
-  1. sudo apt-get update &amp;&amp; sudo apt-get upgrade --with-new-pkgs  # 安装全部安全更新
-  2. secwatch scan --container mariadb                            # 容器 mariadb 要靠更新镜像修复，这里有方法
-  3. sudo reboot                                                  # 让新内核和已升级的服务生效
-  4. secwatch scan                                                # 再查一次，确认已修复</code></pre>
+ 看详情  secwatch scan --pkg caddy     完整报告  secwatch scan --all</code></pre>
 
 <h3>优先级</h3>
 <div class="tablewrap">

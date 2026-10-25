@@ -57,6 +57,8 @@ type Report struct {
 	showAll           bool
 	only              string // --pkg: show one package in full
 	stalePackages     map[string]bool
+	// Hostname of the scanned machine, shown in the report header.
+	Hostname string `json:"hostname,omitempty"`
 	// Update: a newer scanner release ("v0.1.4"), set by the caller.
 	Update string `json:"scanner_update,omitempty"`
 	// Color enables ANSI styles in the text report (set for colour terminals).

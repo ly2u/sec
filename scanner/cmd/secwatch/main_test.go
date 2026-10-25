@@ -91,8 +91,9 @@ func TestScanEndToEndText(t *testing.T) {
 		t.Fatalf("KEV finding must give exit code 3, got %d\nstderr: %s\n%s", code, stderr.String(), out)
 	}
 	for _, want := range []string{
-		"✗ 高风险：1 个软件包有安全更新，1 个需要尽快处理，其中 1 个的漏洞已被在野利用",
-		"  P0 立即  curl         1  已被在野利用 · 严重 9.8",
+		"● 有紧急问题  1 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"   系统软件包  ✗ 1 个需要更新",
+		"立即  curl",
 		"sudo apt-get update && sudo apt-get upgrade --with-new-pkgs",
 		"未检查：nginx（第三方源，请关注其官方公告）",
 		"secwatch scan --pkg curl",
@@ -223,7 +224,7 @@ func TestUpToDateHostWithOnlyUnfixedIssues(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("nothing actionable and nothing in KEV: exit code must be 0, got %d\n%s", code, text)
 	}
-	for _, want := range []string{"没有需要升级的软件包", "发行版暂无修复 2 项", "值得关注 1 项", "1 项被发行版评为可忽略", "CVE-2026-0020"} {
+	for _, want := range []string{"● 状态良好  没有需要更新的软件，1 项值得关注的问题在等发行版补丁", "等待补丁    · openssh 1 项值得关注"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)
 		}
@@ -293,10 +294,10 @@ func TestL2EndToEnd(t *testing.T) {
 		t.Fatalf("scan failed: %s", stderr.String())
 	}
 	for _, want := range []string{
-		"  P2 计划  Docker Engine       1  严重 9.2 · 第三方源",
-		"  P2 计划  Node.js             1  严重 9.2 · 需单独升级",
-		"1. sudo apt-get update && sudo apt-get install --only-upgrade docker-ce",
-		"2. secwatch scan --pkg Node.js",
+		"Docker Engine             1 个漏洞    升级即可，见第 1 步",
+		"Node.js                   1 个漏洞    需要单独更新，见第 2 步",
+		"1  sudo apt-get update && sudo apt-get install --only-upgrade docker-ce",
+		"2  secwatch scan --pkg Node.js",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)
@@ -370,12 +371,13 @@ func TestContainerScan(t *testing.T) {
 	out := b.String()
 	t.Log("\n" + out)
 	for _, want := range []string{
-		"✓ 本机没有需要升级的软件包",
-		"容器（4 个运行中，检查了容器内的系统软件包）",
-		"  web           Debian 12    ✗ 1 个需要尽快处理（共 1 个软件包有更新）",
-		"  app                        未检查：精简镜像（没有系统信息和软件包数据库）",
-		"  dddddddddddd  Alpine 3.18  未检查：暂不支持该系统版本",
-		"secwatch scan --container web",
+		"● 有紧急问题  容器中 2 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"   系统软件包  ✓ 300 个都是最新",
+		"   容器        ✗ 2 个建议更新",
+		"web            Debian 12  1 个软件包  重建镜像，见第 1 步",
+		"app                                   未检查：精简镜像（没有系统信息和软件包数据库）",
+		"dddddddddddd   Alpine 3.18            未检查：暂不支持该系统版本",
+		"1  secwatch scan --container web",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
@@ -398,7 +400,7 @@ func TestContainerScan(t *testing.T) {
 	t.Log("\n" + one)
 	for _, want := range []string{
 		"容器 web（镜像 nginx:1.27）",
-		"  P0 立即  curl         1  已被在野利用 · 严重 9.8",
+		"立即  curl",
 		"docker pull nginx:1.27",
 		"secwatch scan --container web --pkg curl",
 	} {
@@ -481,9 +483,8 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 	text := stdout.String()
 	t.Log("\n" + text)
 	for _, want := range []string{
-		"  P2 计划  caddy        1  高危 7.5 · Go 程序内置组件 · 第三方源",
-		"  P2 计划  frpc         1  高危 7.5 · Go 程序内置组件 · 需单独升级",
-		"secwatch scan --pkg frpc",
+		"caddy                     1 个漏洞    升级即可，见第 1 步",
+		"frpc                      1 个漏洞    等作者发布新版，不急",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)

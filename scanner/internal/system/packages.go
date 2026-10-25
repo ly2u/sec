@@ -212,6 +212,17 @@ func loadAptIndex(h Host) *aptIndex {
 			}
 		}
 	}
+	// An index file's time is when its repository last changed (a quiet
+	// third-party repository may not change for weeks), so the newest of
+	// them is only a hint. apt's own marks of a successful update are better.
+	for _, p := range []string{"var/lib/apt/periodic/update-success-stamp", "var/cache/apt/pkgcache.bin"} {
+		if f, err := h.Open(p); err == nil {
+			if info, err := f.Stat(); err == nil && info.ModTime().After(idx.updated) {
+				idx.updated = info.ModTime()
+			}
+			f.Close()
+		}
+	}
 	return idx
 }
 

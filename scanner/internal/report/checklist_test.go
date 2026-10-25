@@ -161,3 +161,27 @@ func TestChecklistProgramAlreadyNewestInRepo(t *testing.T) {
 		t.Errorf("%s", out)
 	}
 }
+
+// A serious problem with nothing to upgrade to is not "update soon".
+func TestVerdictWhenUrgentProgramCannotBeUpgraded(t *testing.T) {
+	r := racknerd()
+	r.Containers = nil
+	r.noNewer["caddy"] = true
+	for i := range r.Findings {
+		if r.Findings[i].Package == "caddy" {
+			r.Findings[i].Priority = "P1"
+		}
+	}
+	_, title, msg := r.Verdict()
+	if title != "需要留意" || !strings.Contains(msg, "还没有新版本可升级") {
+		t.Errorf("%s %s", title, msg)
+	}
+	for i := range r.Findings {
+		if r.Findings[i].Package == "caddy" {
+			r.Findings[i].KEV = true
+		}
+	}
+	if level, title, msg := r.Verdict(); level != "urgent" || !strings.Contains(msg, "必要时先停止它对外服务") {
+		t.Errorf("%s %s %s", level, title, msg)
+	}
+}

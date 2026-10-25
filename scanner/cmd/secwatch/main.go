@@ -704,8 +704,16 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 		}
 		text := notify.Message(host, title, msg, ev, Version)
 		p := notify.Payload{Host: rep.Hostname, Kind: ev.Kind, Level: level, Title: title, Verdict: msg,
-			New: ev.New, Open: ev.Open, Text: text, Version: Version}
-		if err := send(c, p); err != nil {
+			New: notify.Texts(ev.New), Open: notify.Texts(ev.Open), Text: text, Version: Version}
+		err := send(c, p)
+		var partial *notify.PartialError
+		if errors.As(err, &partial) {
+			// Delivered somewhere: count it as sent, so the channels that got
+			// it are not sent the same message again; report the others.
+			fmt.Fprintf(stderr, "secwatch: 部分通知渠道发送失败：%v\n", err)
+			err = nil
+		}
+		if err != nil {
 			// What was notified stays as it was, so the next run tries again.
 			prev := notify.LoadState(statePath)
 			prev.LastRun, prev.LastTitle, prev.LastResult = now, title, "通知发送失败，下次重试"
@@ -718,6 +726,9 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 		result = map[string]string{
 			"new": fmt.Sprintf("已通知新发现的 %d 项", len(ev.New)), "reminder": "已发送每日提醒", "resolved": "已通知问题已恢复",
 		}[ev.Kind]
+		if partial != nil {
+			result += "（部分渠道失败，见 journalctl -u secwatch.service）"
+		}
 	}
 	next.LastRun, next.LastTitle, next.LastResult = now, title, result
 	if err := notify.SaveState(statePath, next); err != nil {

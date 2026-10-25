@@ -361,6 +361,12 @@ func TestL2EndToEnd(t *testing.T) {
 	if text := detail(); !strings.Contains(text, "Docker Engine             1 个漏洞    升级即可，见第 1 步") {
 		t.Errorf("stale lists must not claim there is nothing newer\n%s", text)
 	}
+	// Old index files but a recent successful apt-get update (the
+	// repositories simply did not change): believed again.
+	put(t, root, "var/lib/apt/periodic/update-success-stamp", "")
+	if text := detail(); !strings.Contains(text, "Docker Engine             1 个漏洞    源里已是最新版，等作者发布新版") {
+		t.Errorf("apt's update stamp shows the lists are current\n%s", text)
+	}
 }
 
 // Containers are scanned through their root filesystems. Here the roots are

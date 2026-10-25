@@ -260,8 +260,17 @@ func SaveState(path string, s State) error {
 // Event is a notification to send.
 type Event struct {
 	Kind string // "new", "reminder" or "resolved"
-	New  []string
-	Open []string // everything still open, new ones included
+	New  []report.Alert
+	Open []report.Alert // everything still open, new ones included
+}
+
+// Texts lists the one-line texts of alerts (for the webhook payload).
+func Texts(as []report.Alert) []string {
+	var out []string
+	for _, a := range as {
+		out = append(out, a.Text)
+	}
+	return out
 }
 
 // Decide compares this scan with what was notified before: new problems are
@@ -269,16 +278,16 @@ type Event struct {
 // when everything is resolved. It returns the next state either way.
 func Decide(prev State, alerts []report.Alert, now time.Time) (*Event, State) {
 	next := State{Open: map[string]Item{}, LastReminder: prev.LastReminder}
-	var newOnes, open []string
+	var newOnes, open []report.Alert
 	for _, a := range alerts {
 		item, seen := prev.Open[a.Key]
 		if !seen {
 			item = Item{Since: now}
-			newOnes = append(newOnes, a.Text)
+			newOnes = append(newOnes, a)
 		}
 		item.Text = a.Text
 		next.Open[a.Key] = item
-		open = append(open, a.Text)
+		open = append(open, a)
 	}
 	switch {
 	case len(newOnes) > 0:
@@ -296,39 +305,57 @@ func Decide(prev State, alerts []report.Alert, now time.Time) (*Event, State) {
 // ---------------------------------------------------------------- message
 
 // Message is the text sent to the channels. Plain text: no markup to escape.
+// The first line says what happened (new problems, a reminder, all fixed);
+// the host's overall verdict follows, then the items and what to do.
 func Message(host, title, verdict string, ev *Event, version string) string {
 	var b strings.Builder
-	icon := map[string]string{"有紧急问题": "🔴", "建议尽快更新": "🟡", "状态良好": "🟢"}[title]
 	if ev.Kind == "resolved" {
-		icon, title, verdict = "✅", "已恢复", "之前提醒的问题都已处理"
+		fmt.Fprintf(&b, "✅ %s：之前提醒的问题都已处理\n", host)
+		fmt.Fprintf(&b, "— LY2U SecWatch %s · 只提醒，不会自动修复", version)
+		return b.String()
 	}
-	fmt.Fprintf(&b, "%s %s：%s\n%s\n", icon, host, title, verdict)
-	list := func(head string, items []string) {
-		if len(items) == 0 {
-			return
+	items := ev.New
+	head := fmt.Sprintf("新发现 %d 项需要关注", len(ev.New))
+	if ev.Kind == "reminder" {
+		items = ev.Open
+		head = fmt.Sprintf("仍有 %d 项尚未处理（每天提醒一次）", len(ev.Open))
+	}
+	icon := "🔵"
+	waiting := 0
+	for _, a := range items {
+		switch {
+		case a.KEV || a.Priority == "P0":
+			icon = "🔴"
+		case a.Priority == "P1" && icon != "🔴":
+			icon = "🟡"
 		}
-		fmt.Fprintf(&b, "\n%s\n", head)
-		for i, it := range items {
-			if i == 8 {
-				fmt.Fprintf(&b, "…… 共 %d 项\n", len(items))
-				break
-			}
-			fmt.Fprintf(&b, "• %s\n", it)
+		if a.Waiting {
+			waiting++
 		}
 	}
-	switch ev.Kind {
-	case "new":
-		list(fmt.Sprintf("新发现 %d 项：", len(ev.New)), ev.New)
-		if rest := len(ev.Open) - len(ev.New); rest > 0 {
-			fmt.Fprintf(&b, "另有 %d 项之前提醒过、尚未处理\n", rest)
+	fmt.Fprintf(&b, "%s %s：%s\n整体结论：%s，%s\n\n", icon, host, head, title, verdict)
+	for i, a := range items {
+		if i == 8 {
+			fmt.Fprintf(&b, "…… 共 %d 项\n", len(items))
+			break
 		}
-	case "reminder":
-		list(fmt.Sprintf("仍有 %d 项尚未处理（每天提醒一次）：", len(ev.Open)), ev.Open)
+		fmt.Fprintf(&b, "• %s\n", a.Text)
 	}
-	if ev.Kind != "resolved" {
-		b.WriteString("\n查看详情和修复命令：sudo secwatch scan\n")
+	if rest := len(ev.Open) - len(ev.New); ev.Kind == "new" && rest > 0 {
+		fmt.Fprintf(&b, "另有 %d 项之前提醒过、尚未处理\n", rest)
 	}
-	fmt.Fprintf(&b, "— LY2U SecWatch %s（只读检查，不会自动修复）", version)
+	b.WriteString("\n")
+	if waiting > 0 {
+		if waiting == len(items) {
+			b.WriteString("这些程序暂时没有新版本可升级，现在无需操作；作者发布新版后，再次检查会提示升级。\n")
+		} else {
+			b.WriteString("标“暂无新版可升级”的现在无法修复，等作者发布新版后再次检查会提示升级。\n")
+		}
+	}
+	if waiting < len(items) {
+		b.WriteString("怎么处理：登录服务器运行 sudo secwatch scan 查看报告，按“建议这样做”里的命令操作。\n")
+	}
+	fmt.Fprintf(&b, "— LY2U SecWatch %s · 只提醒，不会自动修复", version)
 	return b.String()
 }
 
@@ -349,21 +376,61 @@ type Payload struct {
 
 var client = &http.Client{Timeout: 20 * time.Second}
 
+// PartialError means some channels got the message and others did not.
+type PartialError struct{ Err error }
+
+func (e *PartialError) Error() string { return e.Err.Error() }
+func (e *PartialError) Unwrap() error { return e.Err }
+
 // Send delivers text (and the payload, for webhooks) to every configured
-// channel. Errors never contain the bot token.
+// channel. When only some channels fail the error is a *PartialError.
+// Errors never contain the bot token or the webhook's path and query.
 func Send(ctx context.Context, c *Config, p Payload) error {
 	var errs []error
+	ok := 0
 	if t := c.Telegram; t != nil {
 		if err := sendTelegram(ctx, t, p.Text); err != nil {
 			errs = append(errs, fmt.Errorf("Telegram：%w", err))
+		} else {
+			ok++
 		}
 	}
 	if w := c.Webhook; w != nil {
 		if err := sendWebhook(ctx, w, p); err != nil {
 			errs = append(errs, fmt.Errorf("Webhook：%w", err))
+		} else {
+			ok++
 		}
 	}
-	return errors.Join(errs...)
+	err := errors.Join(errs...)
+	if err != nil && ok > 0 {
+		return &PartialError{err}
+	}
+	return err
+}
+
+// netError describes a failed request without the URL, which may hold a
+// token (Telegram) or a secret path or query (webhooks).
+func netError(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	return clipText(err.Error(), 200)
+}
+
+// MaskURL shows scheme and host only: webhook paths and queries often
+// carry a secret.
+func MaskURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "***"
+	}
+	s := u.Scheme + "://" + u.Host
+	if u.Path != "" && u.Path != "/" || u.RawQuery != "" {
+		s += "/…"
+	}
+	return s
 }
 
 func sendTelegram(ctx context.Context, t *Telegram, text string) error {
@@ -379,7 +446,7 @@ func sendTelegram(ctx context.Context, t *Telegram, text string) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New(redact(err.Error(), t.Token))
+		return errors.New(redact(netError(err), t.Token))
 	}
 	defer resp.Body.Close()
 	var out struct {
@@ -406,7 +473,7 @@ func sendWebhook(ctx context.Context, w *Webhook, p Payload) error {
 	req.Header.Set("User-Agent", "secwatch/"+p.Version)
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New(clipText(err.Error(), 200))
+		return errors.New(netError(err))
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))

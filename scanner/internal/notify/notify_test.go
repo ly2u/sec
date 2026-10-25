@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -101,7 +102,7 @@ func TestDecide(t *testing.T) {
 		t.Fatalf("same problem half an hour later is not sent again: %+v", ev)
 	}
 	ev, s2 := Decide(s, []report.Alert{a, b}, now.Add(time.Hour))
-	if ev == nil || ev.Kind != "new" || len(ev.New) != 1 || ev.New[0] != b.Text || len(ev.Open) != 2 {
+	if ev == nil || ev.Kind != "new" || len(ev.New) != 1 || ev.New[0].Text != b.Text || len(ev.Open) != 2 {
 		t.Fatalf("a new problem is sent with the open count: %+v", ev)
 	}
 	if !s2.Open["本机/openssh"].Since.Equal(now) {
@@ -124,15 +125,67 @@ func TestDecide(t *testing.T) {
 }
 
 func TestMessage(t *testing.T) {
+	ssh := report.Alert{Text: "openssh（立即处理 · 已被在野利用）", Priority: "P0", KEV: true}
+	curl := report.Alert{Text: "curl（尽快处理）", Priority: "P1"}
 	msg := Message("racknerd", "有紧急问题", "1 个软件包的漏洞已被黑客实际利用，请今天处理",
-		&Event{Kind: "new", New: []string{"openssh（立即处理）"}, Open: []string{"openssh（立即处理）", "curl（尽快处理）"}}, "v0.1.7")
-	for _, want := range []string{"🔴 racknerd：有紧急问题", "新发现 1 项：\n• openssh（立即处理）", "另有 1 项之前提醒过、尚未处理", "sudo secwatch scan", "不会自动修复"} {
+		&Event{Kind: "new", New: []report.Alert{ssh}, Open: []report.Alert{ssh, curl}}, "v0.1.7")
+	for _, want := range []string{
+		"🔴 racknerd：新发现 1 项需要关注\n整体结论：有紧急问题，1 个软件包的漏洞已被黑客实际利用，请今天处理",
+		"• openssh（立即处理 · 已被在野利用）", "另有 1 项之前提醒过、尚未处理",
+		"怎么处理：登录服务器运行 sudo secwatch scan", "只提醒，不会自动修复",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("missing %q in\n%s", want, msg)
 		}
 	}
-	if m := Message("h", "状态良好", "x", &Event{Kind: "resolved"}, "v"); !strings.HasPrefix(m, "✅ h：已恢复") {
+	if strings.Contains(msg, "修复命令") {
+		t.Error("secwatch scan shows a report; it is not a fix command")
+	}
+	t.Log("\n" + msg)
+
+	// Codex's case: an overall "good" host, items that cannot be upgraded yet.
+	wait := []report.Alert{{Text: "caddy（计划处理 · 对外服务 · 暂无新版可升级）", Priority: "P2", Waiting: true}}
+	msg = Message("kvm", "状态良好", "没有需要立即处理的漏洞", &Event{Kind: "new", New: wait, Open: wait}, "v")
+	for _, want := range []string{"🔵 kvm：新发现 1 项需要关注", "整体结论：状态良好", "暂时没有新版本可升级，现在无需操作"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("missing %q in\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "怎么处理") {
+		t.Errorf("nothing to run when nothing can be upgraded\n%s", msg)
+	}
+	t.Log("\n" + msg)
+	if m := Message("h", "状态良好", "x", &Event{Kind: "resolved"}, "v"); !strings.HasPrefix(m, "✅ h：之前提醒的问题都已处理") {
 		t.Errorf("resolved: %s", m)
+	}
+}
+
+// Webhook paths and queries may hold secrets: errors and displays omit them.
+func TestWebhookSecretsStayHidden(t *testing.T) {
+	c := &Config{Webhook: &Webhook{URL: "http://127.0.0.1:1/hooks/SECRET123?key=SECRET456"}}
+	err := Send(context.Background(), c, Payload{Text: "x"})
+	if err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("%v", err)
+	}
+	if got := MaskURL(c.Webhook.URL); got != "http://127.0.0.1:1/…" {
+		t.Errorf("%s", got)
+	}
+	if got := MaskURL("https://example.com"); got != "https://example.com" {
+		t.Errorf("%s", got)
+	}
+}
+
+func TestPartialFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	c := &Config{Telegram: &Telegram{Token: token, ChatID: "42", API: "http://127.0.0.1:1"}, Webhook: &Webhook{URL: srv.URL}}
+	var partial *PartialError
+	if err := Send(context.Background(), c, Payload{Text: "x"}); !errors.As(err, &partial) || strings.Contains(err.Error(), token) {
+		t.Fatalf("webhook delivered, Telegram failed: %v", err)
+	}
+	c.Webhook.URL = "http://127.0.0.1:1"
+	if err := Send(context.Background(), c, Payload{Text: "x"}); err == nil || errors.As(err, &partial) {
+		t.Fatalf("all failed is not partial: %v", err)
 	}
 }
 

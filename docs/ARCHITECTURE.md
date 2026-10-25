@@ -205,7 +205,7 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 - **候选程序**：宿主机上正在运行的程序（`/proc/*/exe`，仅宿主机命名空间）、`/usr/local/bin`、`/usr/local/sbin`、`/opt/*`、`/opt/*/bin`、Docker CLI 插件目录（`/usr/libexec/docker/cli-plugins`、`/usr/local/lib/docker/cli-plugins`、`/root/.docker/cli-plugins` 等，即 docker compose、docker buildx），以及第三方源软件包安装在 bin 目录的文件；最多 400 个。属于官方软件包的文件跳过（发行版数据已覆盖）；产品规则已判定过的（如 Docker CE）跳过，避免重复。容器内则检查容器进程的 `/proc/PID/exe`，因此只有一个 Go 程序的精简镜像（distroless/scratch）也能判定。
 - **数据**：采集端新增 Go 漏洞库（OSV 的 `Go/all.zip`，CC-BY-4.0），表 `go_advisories`（迁移 0005），每 6 小时同步；签名数据包 `golang-1`，`package_key` 为 `module`，范围类型为 `SEMVER`，以 CVE 补充 CVSS/EPSS/KEV。`toolchain`（go 命令本身）不计入。
 - **判定**：版本比较使用原样复制的 `golang.org/x/mod/semver`（`scanner/internal/thirdparty/semver`）。程序自身的模块（主模块；xcaddy 这类构建取与程序同名的依赖，如 caddy → `github.com/caddyserver/caddy/v2`）命中为“确认受影响”；内置依赖与 Go 标准库命中为“可能受影响”，并且除非在 KEV 中，优先级最高为 P2——是否真能利用取决于程序是否用到相关代码，扫描器暂不做 govulncheck 式的符号可达性分析。
-- **报告**：每个程序一行（“Go 程序 / Go 程序内置组件”）。`--pkg 程序名` 给出组件表（程序本身、Go 标准库、各依赖的当前版本、漏洞数、修复所需的最低版本）和具体步骤：从模块路径推出的项目发布页（GitHub/GitLab）、替换哪个文件、从 cgroup 读出的 systemd 服务的重启命令；第三方源的程序给包管理器命令——但只在本机 apt 索引里确实有比已装版本更新的版本时才给；源里已是最新版（例如 Caddy 源里的 caddy 还没用新版 Go 重新编译发布）时，与手动安装的程序一样标为“等作者发布新版”，不给命令、不计入“建议更新”，通知里标“暂无新版可升级”。apt 索引超过 7 天没更新时不作此判断（索引可能已过时），照常给出带 `apt-get update` 的升级命令。逐个 CVE 放在 `--pkg 程序名 --all`。离线模式用 `--go-bundle` 提供数据包。
+- **报告**：每个程序一行（“Go 程序 / Go 程序内置组件”）。`--pkg 程序名` 给出组件表（程序本身、Go 标准库、各依赖的当前版本、漏洞数、修复所需的最低版本）和具体步骤：从模块路径推出的项目发布页（GitHub/GitLab）、替换哪个文件、从 cgroup 读出的 systemd 服务的重启命令；第三方源的程序给包管理器命令——但只在本机 apt 索引里确实有比已装版本更新的版本时才给；源里已是最新版（例如 Caddy 源里的 caddy 还没用新版 Go 重新编译发布）时，与手动安装的程序一样标为“等作者发布新版”，不给命令、不计入“建议更新”，通知里标“暂无新版可升级”。这类程序即使漏洞较严重也不会让结论变成“建议尽快更新”，而是“需要留意：还没有新版本可升级”（已被在野利用时为红色，并建议必要时先停止对外服务）。apt 索引超过 7 天没更新时不作此判断（索引可能已过时），照常给出带 `apt-get update` 的升级命令。“更新时间”取索引文件、`/var/lib/apt/periodic/update-success-stamp`、`/var/cache/apt/pkgcache.bin` 中最新的时间：索引文件的时间是软件源最后变动的时间（Debian main 只在小版本发布时变），按单个软件源判断会把很少发版的第三方源误判为过时。可升级版本取索引中高于已装的最高版本，未考虑 apt pin（VPS 上少见）。逐个 CVE 放在 `--pkg 程序名 --all`。离线模式用 `--go-bundle` 提供数据包。
 - **secwatch 自身**不在扫描范围内：它靠新版本提示保持更新；发布流程用最新稳定版 Go 编译，并在 `govulncheck` 发现可达漏洞时停止发布；Dependabot 负责依赖升级 PR。
 
 ### 定时检查与通知（已实现，用户显式开启）
@@ -214,9 +214,12 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 
 - **只有 `secwatch schedule` 会改动系统**，并且只在用户运行时：写 `/etc/secwatch/notify.json`（root 所有、600 权限，含 Bot Token；权限过宽时拒绝读取）和 systemd 的 `secwatch.service`/`secwatch.timer`。`--remove` 停用并删除全部文件与通知记录。没有 systemd 的系统只保存配置，并打印一行 crontab 让用户自己添加。`secwatch scan` 本身依然什么都不写。不带参数运行 `secwatch` 打开的菜单（仅交互终端）只是这些命令的入口：开启/修改/关闭都走同一套 `schedule` 逻辑，修改时以当前设置为默认值，同样先发测试消息再保存。
 - **开启前先发测试消息**，发送失败则不写任何文件。Token 不出现在命令行参数（会进进程列表），交互输入或用环境变量 `SECWATCH_TELEGRAM_TOKEN`；错误信息中会抹去 Token。
-- **定时运行**：`scan --notify`，间隔为整数小时，1–720（数据包最多每小时更新，更短没有意义）；v0.1.7 保存的 30m、2h 等旧写法照常可用，在菜单里修改时转为整数小时，`RandomizedDelaySec` 错开各服务器的请求。服务单元启用 `ProtectSystem=strict`、`ProtectHome=read-only`、`NoNewPrivileges`：除缓存与状态目录外整个文件系统只读，用 systemd 强制兑现“扫描只读”。退出码 3 视为成功。
+- **定时运行**：`scan --notify`，间隔为整数小时，1–720（数据包最多每小时更新，更短没有意义）；v0.1.7 保存的 30m、2h 等旧写法照常可用，在菜单里修改时转为整数小时，`RandomizedDelaySec` 错开各服务器的请求。服务单元启用 `ProtectSystem=strict`、`ProtectHome=read-only`、`NoNewPrivileges`，以及 `ProtectKernelTunables`、`ProtectControlGroups`、`RestrictSUIDSGID`、`RestrictRealtime`、`LockPersonality`、`SystemCallArchitectures=native`（不限制 capabilities：读取其他进程与容器文件系统需要 root 的读权限，收紧前须在真实机器上逐项验证）：除缓存与状态目录外整个文件系统只读，用 systemd 强制兑现“扫描只读”。退出码 3 视为成功。
 - **何时通知**：达到所选级别（P0/P1/P2，默认 P1）或已被在野利用的项目。新问题立即通知；未修复的每 24 小时最多提醒一次；全部修复后通知“已恢复”。去重记录在 `/var/lib/secwatch/notify-state.json`；发送失败时不更新记录，下次运行重试。
 - **发什么**：纯文本短消息——主机名、一行结论、新增/未处理的软件包名称与级别、查看详情的命令。不发软件清单或版本全集。只发往用户配置的渠道，从不发往 SecWatch 服务器；从不自动修复。Webhook 收到同内容的 JSON。
+- **开启/修改是原子的**：单元文件原子替换；写入或 systemctl 任一步失败，配置与单元恢复为原来的样子（首次开启则全部删除并停用）。
+- **渠道与密钥**：Webhook 的路径和查询参数常含密钥，状态显示、提示和错误信息只显示协议与主机；Telegram Token 从错误中抹去。多个渠道时，只要一个送达即视为已通知（避免已送达的渠道下次重复收到），失败的渠道写入日志。
+- **消息措辞**：第一行说发生了什么（新发现 N 项 / 仍有 N 项未处理 / 都已处理），第二行是本机整体结论，然后是条目；全部是“暂无新版可升级”时明确写“现在无需操作”，有可处理的才写“登录服务器运行 sudo secwatch scan 查看报告，按建议操作”——扫描器只提醒，不修复。
 - **检查失败不能悄无声息**：定时检查没能完成（拿不到数据等）时记入通知记录（菜单的“上次检查”显示“检查未完成”）；连续失败满 24 小时发一条提醒，只发一次，下次成功后重新计时。
 - 国内机器可用 `--telegram-api` 指定自建的 Telegram API 反代（必须 https）。
 

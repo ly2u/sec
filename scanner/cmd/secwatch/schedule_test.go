@@ -16,9 +16,10 @@ import (
 const testToken = "123456789:AAEhBP0av28F2Nn0WxWr3rS9Y2Lqo8pBcdE"
 
 type fakeSystem struct {
-	calls []string
-	sent  []notify.Payload
-	fail  error
+	calls   []string
+	sent    []notify.Payload
+	fail    error
+	failCmd string // a systemctl command that fails
 }
 
 func newScheduler(t *testing.T, answers string, systemd bool) (*scheduler, *fakeSystem, *bytes.Buffer) {
@@ -27,7 +28,11 @@ func newScheduler(t *testing.T, answers string, systemd bool) (*scheduler, *fake
 	s := &scheduler{
 		root: t.TempDir(), exe: "/usr/local/bin/secwatch", host: "racknerd", in: bufio.NewReader(strings.NewReader(answers)), out: out,
 		run: func(args ...string) (string, error) {
-			f.calls = append(f.calls, strings.Join(args, " "))
+			cmd := strings.Join(args, " ")
+			f.calls = append(f.calls, cmd)
+			if cmd == f.failCmd {
+				return "Job failed", errors.New("exit status 1")
+			}
 			return "active", nil
 		},
 		systemd: systemd,
@@ -191,5 +196,39 @@ func TestScheduledFailureIsNotSilent(t *testing.T) {
 	notifyFailure(cfg, state, &stderr, send, t0.Add(40*time.Hour))
 	if st := notify.LoadState(state); st.FailNotified || !st.FailingSince.Equal(t0.Add(40*time.Hour)) {
 		t.Errorf("%+v", st)
+	}
+}
+
+// A setup that fails half way leaves things as they were.
+func TestScheduleFailureRestoresPreviousSetup(t *testing.T) {
+	s, f, _ := newScheduler(t, "", true)
+	tg := &notify.Telegram{Token: testToken, ChatID: "42"}
+	f.failCmd = "restart secwatch.timer"
+	err := s.install(&notify.Config{Every: "2", NotifyOn: "P1", Telegram: tg}, false)
+	if err == nil || !strings.Contains(err.Error(), "已恢复原来的设置") {
+		t.Fatalf("%v", err)
+	}
+	for _, p := range []string{configFile, "etc/systemd/system/secwatch.service", "etc/systemd/system/secwatch.timer"} {
+		if fileExists(s.path(p)) {
+			t.Errorf("%s left behind by a failed first setup", p)
+		}
+	}
+	if !strings.Contains(strings.Join(f.calls, "|"), "disable secwatch.timer|daemon-reload") {
+		t.Errorf("the new timer is disabled again: %v", f.calls)
+	}
+
+	// Changing a working setup: the old one comes back.
+	f.failCmd, f.calls = "", nil
+	if err := s.install(&notify.Config{Every: "6", NotifyOn: "P1", Telegram: tg}, false); err != nil {
+		t.Fatal(err)
+	}
+	f.failCmd = "restart secwatch.timer"
+	if err := s.install(&notify.Config{Every: "2", NotifyOn: "P0", Telegram: tg}, false); err == nil {
+		t.Fatal("expected failure")
+	}
+	c, err := notify.Load(s.path(configFile))
+	timer, _ := os.ReadFile(s.path("etc/systemd/system/secwatch.timer"))
+	if err != nil || c.Every != "6" || c.NotifyOn != "P1" || !strings.Contains(string(timer), "OnUnitActiveSec=21600s") {
+		t.Errorf("previous setup restored: %+v %v\n%s", c, err, timer)
 	}
 }

@@ -91,8 +91,20 @@ func (r *Report) waiting(g *pkgGroup) bool {
 // colour, the title ("● 状态良好") and the sentence after it.
 func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 	p0, p1, kev, ransom := 0, 0, 0, 0
+	waitKEV, waitUrgent := 0, 0
 	count := func(gs []*pkgGroup) {
 		for _, g := range gs {
+			// Nothing to upgrade to yet: said separately below, never as
+			// "update soon".
+			if r.waiting(g) {
+				switch {
+				case g.kev:
+					waitKEV++
+				case urgent(g):
+					waitUrgent++
+				}
+				continue
+			}
 			switch g.priority {
 			case "P0":
 				p0++
@@ -117,7 +129,7 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 	items := len(fixable) + len(r.containersToFix())
 	waiting := 0
 	for _, g := range fixable {
-		if r.waiting(g) && !urgent(g) {
+		if r.waiting(g) {
 			waiting++
 		}
 	}
@@ -136,6 +148,10 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 		return cRed, "有紧急问题", fmt.Sprintf("%d 个对外服务有严重漏洞，请今天处理", p0)
 	case p1 > 0:
 		return cYellow, "建议尽快更新", fmt.Sprintf("%d 项漏洞被利用的可能性较高，或在对外服务中", p1)
+	case waitKEV > 0:
+		return cRed, "需要留意", fmt.Sprintf("%d 个程序的漏洞已被黑客实际利用，但还没有新版本可升级：关注作者发布，必要时先停止它对外服务", waitKEV)
+	case waitUrgent > 0:
+		return cYellow, "需要留意", fmt.Sprintf("%d 个程序有较严重的漏洞，但还没有新版本可升级，请关注作者发布", waitUrgent)
 	case items > 0:
 		return cGreen, "状态良好", fmt.Sprintf("没有需要立即处理的漏洞，有 %d 项建议更新", items)
 	case waiting > 0:

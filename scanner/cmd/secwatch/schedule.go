@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -176,8 +177,15 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 		}
 		fmt.Fprintln(s.out, "测试消息已发送，请在你的渠道里确认收到。")
 	}
+	// From here on a failure puts back what was there before, so a half
+	// written setup is never left behind.
+	undo := s.snapshot()
+	fail := func(err error) error {
+		undo()
+		return err
+	}
 	if err := notify.Save(s.path(configFile), c); err != nil {
-		return fmt.Errorf("写入配置失败：%w", err)
+		return fail(fmt.Errorf("写入配置失败：%w", err))
 	}
 	if !s.systemd {
 		spec, actual := cronSpec(every)
@@ -188,21 +196,21 @@ func (s *scheduler) install(c *notify.Config, test bool) error {
 		return nil
 	}
 	if err := writeFile(s.path(filepath.Join(unitDir, unitName+".service")), serviceUnit(s.exe)); err != nil {
-		return err
+		return fail(err)
 	}
 	if err := writeFile(s.path(filepath.Join(unitDir, unitName+".timer")), timerUnit(every)); err != nil {
-		return err
+		return fail(err)
 	}
 	if out, err := s.run("daemon-reload"); err != nil {
-		return fmt.Errorf("systemctl daemon-reload 失败：%v %s", err, out)
+		return fail(fmt.Errorf("systemctl daemon-reload 失败，已恢复原来的设置：%v %s", err, out))
 	}
 	if out, err := s.run("enable", unitName+".timer"); err != nil {
-		return fmt.Errorf("启用定时器失败：%v %s", err, out)
+		return fail(fmt.Errorf("启用定时器失败，已恢复原来的设置：%v %s", err, out))
 	}
 	// restart, not start: when the timer is already running (settings
 	// changed), only a restart applies the new interval.
 	if out, err := s.run("restart", unitName+".timer"); err != nil {
-		return fmt.Errorf("启动定时器失败：%v %s", err, out)
+		return fail(fmt.Errorf("启动定时器失败，已恢复原来的设置：%v %s", err, out))
 	}
 	fmt.Fprintf(s.out, `已开启：每 %s检查一次，出现「%s」及以上的新问题时通知。
   查看状态   sudo secwatch schedule --status
@@ -276,7 +284,7 @@ func (s *scheduler) configure(cur *notify.Config) (*notify.Config, bool) {
 			c.Telegram = &notify.Telegram{Token: tok, ChatID: chat, API: api}
 		}
 	}
-	if cur != nil && cur.Webhook != nil && s.yes(fmt.Sprintf("保留现在的 Webhook（%s）？[Y/n]：", cur.Webhook.URL), true) {
+	if cur != nil && cur.Webhook != nil && s.yes(fmt.Sprintf("保留现在的 Webhook（%s）？[Y/n]：", notify.MaskURL(cur.Webhook.URL)), true) {
 		c.Webhook = &notify.Webhook{URL: cur.Webhook.URL}
 	}
 	if c.Webhook == nil {
@@ -338,7 +346,7 @@ func (s *scheduler) status() error {
 		fmt.Fprintf(s.out, "Telegram   Chat %s · Token %s · %s\n", t.ChatID, notify.MaskToken(t.Token), api)
 	}
 	if w := c.Webhook; w != nil {
-		fmt.Fprintf(s.out, "Webhook    %s\n", w.URL)
+		fmt.Fprintf(s.out, "Webhook    %s\n", notify.MaskURL(w.URL))
 	}
 	st := notify.LoadState(s.path(stateFile))
 	if !st.LastRun.IsZero() {
@@ -383,11 +391,71 @@ func fileExists(p string) bool {
 	return err == nil
 }
 
+// writeFile replaces a unit file atomically (temporary file, then rename).
 func writeFile(p, content string) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(p, []byte(content), 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".secwatch-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
+}
+
+// snapshot remembers the configuration and unit files as they are, and
+// returns a function that puts them back (removing those that did not exist
+// and disabling a timer that was not there before).
+func (s *scheduler) snapshot() func() {
+	type saved struct {
+		data   []byte
+		exists bool
+		mode   os.FileMode
+	}
+	files := map[string]os.FileMode{
+		configFile: 0o600,
+		filepath.Join(unitDir, unitName+".service"): 0o644,
+		filepath.Join(unitDir, unitName+".timer"):   0o644,
+	}
+	before := map[string]saved{}
+	for p, mode := range files {
+		data, err := os.ReadFile(s.path(p))
+		before[p] = saved{data, err == nil, mode}
+	}
+	return func() {
+		for p, b := range before {
+			if !b.exists {
+				if p == filepath.Join(unitDir, unitName+".timer") && s.systemd {
+					s.run("disable", unitName+".timer")
+				}
+				os.Remove(s.path(p))
+				continue
+			}
+			if p == configFile {
+				var c notify.Config
+				if json.Unmarshal(b.data, &c) == nil {
+					notify.Save(s.path(p), &c)
+				}
+				continue
+			}
+			writeFile(s.path(p), string(b.data))
+		}
+		if s.systemd {
+			s.run("daemon-reload")
+		}
+	}
 }
 
 // humanEvery shows an interval in hours ("0.5 小时", "6 小时"), or days
@@ -437,6 +505,12 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=yes
 NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
 Nice=10
 IOSchedulingClass=idle
 TimeoutStartSec=15min

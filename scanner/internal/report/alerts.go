@@ -12,7 +12,9 @@ type Alert struct {
 	Where    string `json:"where"`    // "本机" or "容器 NAME"
 	Name     string `json:"name"`     // package or program
 	Priority string `json:"priority"` // P0..P3
-	Text     string `json:"text"`     // one line for a message
+	KEV      bool   `json:"kev,omitempty"`
+	Waiting  bool   `json:"waiting,omitempty"` // no newer version to upgrade to yet
+	Text     string `json:"text"`              // one line for a message
 }
 
 // Verdict is the report's one-line conclusion: a level (urgent, soon, ok),
@@ -53,14 +55,15 @@ func (r *Report) Alerts(level string) []Alert {
 			if hasKernel(g) {
 				tags = append(tags, "需重启")
 			}
-			if rep.waiting(g) {
+			wait := rep.waiting(g)
+			if wait {
 				tags = append(tags, "暂无新版可升级")
 			}
 			text := g.pkg + "（" + strings.Join(tags, " · ") + "）"
 			if where != "本机" {
 				text = where + "：" + text
 			}
-			out = append(out, Alert{Key: where + "/" + g.pkg, Where: where, Name: g.pkg, Priority: g.priority, Text: text})
+			out = append(out, Alert{Key: where + "/" + g.pkg, Where: where, Name: g.pkg, Priority: g.priority, KEV: g.kev, Waiting: wait, Text: text})
 		}
 	}
 	add("本机", r, r.group(isFixable))

@@ -180,12 +180,12 @@ main() {
 		;;
 	esac
 	say ""
+	sudo="sudo "
+	[ "$(id -u)" = 0 ] && sudo=""
 	say "开始检查（只读，不修改系统、不上传数据）："
-	if [ "$(id -u)" = 0 ]; then
-		say "  $cmd scan"
-	else
-		say "  sudo $cmd scan"
-	fi
+	say "  ${sudo}$cmd scan"
+	say "或者打开菜单（立即检查、查看详情、开启定时检查与 Telegram 通知）："
+	say "  ${sudo}$cmd"
 }
 
 main "$@"

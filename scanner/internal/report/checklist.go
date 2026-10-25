@@ -413,6 +413,12 @@ func (r *Report) writeChecklist(t term) {
 	t.paint(cDim, "     完整报告  ")
 	t.paint(cCmd, prefix+"--all")
 	fmt.Fprintln(t)
+	if r.MenuHint && r.inContainer == nil {
+		t.paint(cDim, " 定时提醒  ")
+		t.paint(cCmd, "sudo secwatch")
+		t.paint(cDim, "  打开菜单，可开启定时检查，有新问题时发到你的 Telegram")
+		fmt.Fprintln(t)
+	}
 	src := "在线获取"
 	switch {
 	case r.Data.Offline:

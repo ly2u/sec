@@ -61,6 +61,8 @@ type Report struct {
 	Hostname string `json:"hostname,omitempty"`
 	// Update: a newer scanner release ("v0.1.4"), set by the caller.
 	Update string `json:"scanner_update,omitempty"`
+	// MenuHint points to the menu when no scheduled check is set up.
+	MenuHint bool `json:"-"`
 	// Color enables ANSI styles in the text report (set for colour terminals).
 	Color bool `json:"-"`
 }

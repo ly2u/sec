@@ -183,6 +183,10 @@ func scan(args []string, stdout, stderr io.Writer) int {
 		rep = sub
 	}
 	rep.Update = update
+	if o.root == "/" {
+		_, err := os.Stat("/" + configFile)
+		rep.MenuHint = errors.Is(err, os.ErrNotExist)
+	}
 	if o.format == "json" {
 		if err := rep.WriteJSON(stdout); err != nil {
 			fmt.Fprintf(stderr, "secwatch: 输出失败：%v\n", err)

@@ -120,3 +120,18 @@ func TestAlertsAndVerdict(t *testing.T) {
 		t.Error("a host with only P2 items has nothing to notify at P1")
 	}
 }
+
+func TestChecklistPointsToMenuWhenNotScheduled(t *testing.T) {
+	r := racknerd()
+	if strings.Contains(render(r), "sudo secwatch  打开菜单") {
+		t.Error("no hint once a scheduled check is set up")
+	}
+	r.MenuHint = true
+	out := render(r)
+	if !strings.Contains(out, " 定时提醒  sudo secwatch  打开菜单，可开启定时检查，有新问题时发到你的 Telegram") {
+		t.Errorf("%s", out)
+	}
+	if n := strings.Count(out, "\n"); n > 23 {
+		t.Errorf("%d lines", n)
+	}
+}

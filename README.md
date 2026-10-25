@@ -45,10 +45,11 @@ LY2U SecWatch v0.1.5  my-vps · Debian 12 · 内核 6.1.0-54-amd64 · 只读检�
 - **补丁是否生效**：内核更新后没重启、服务还在用升级前的旧库。
 - **先修哪个**：已被在野利用（CISA KEV）、被勒索软件利用、被利用概率（FIRST EPSS）、是否对外提供服务，综合成“立即 / 尽快 / 计划”。
 
-常用命令：
+不想记命令？直接运行 `sudo secwatch`，按数字选择即可。常用命令：
 
 | 命令 | 作用 |
 |---|---|
+| `sudo secwatch` | 打开菜单：立即检查、查看详情、开启/修改/关闭定时检查与通知 |
 | `sudo secwatch scan` | 体检清单（建议以 root 运行，才能检查容器和对外服务） |
 | `secwatch scan --pkg caddy` | 只看一个软件包或程序：漏洞、所需版本和完整修复命令 |
 | `secwatch scan --container NAME` | 只看一个容器 |

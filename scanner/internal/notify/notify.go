@@ -192,6 +192,10 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 type State struct {
 	Open         map[string]Item `json:"open"`
 	LastReminder time.Time       `json:"last_reminder"`
+	// The last scheduled run, shown by `secwatch` and `schedule --status`.
+	LastRun    time.Time `json:"last_run,omitempty"`
+	LastTitle  string    `json:"last_title,omitempty"`  // "状态良好"
+	LastResult string    `json:"last_result,omitempty"` // "无需通知"
 }
 
 type Item struct {

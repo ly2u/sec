@@ -42,6 +42,7 @@ const (
 )
 
 const usage = `用法：
+  secwatch                 打开菜单（在终端里不带参数运行）
   secwatch scan [选项]     只读扫描本机漏洞
   secwatch schedule [选项] 开启定时检查，发现新问题时通知你的 Telegram 或 Webhook（需要 root）
   secwatch version         显示版本
@@ -81,6 +82,9 @@ schedule 选项：
 
 func main() {
 	if len(os.Args) < 2 {
+		if interactive() {
+			os.Exit(runMenu())
+		}
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(exitUsage)
 	}
@@ -99,58 +103,116 @@ func main() {
 	}
 }
 
-func scan(args []string, stdout, stderr io.Writer) int {
+// scanOpts are the scan command's flags.
+type scanOpts struct {
+	format, only, failOn, onlyContainer         string
+	notifyConfig, notifyState                   string
+	bundlePath, sigPath, upstreamPath, goPath   string
+	baseURL, pubkey, root                       string
+	all, noColor, noContainers, notify, offline bool
+	noExec, noCache                             bool
+}
+
+// parseScan reads the scan flags; ok is false after a usage error.
+func parseScan(args []string, stderr io.Writer) (o scanOpts, ok bool) {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	format := fs.String("format", "table", "")
-	all := fs.Bool("all", false, "")
-	only := fs.String("pkg", "", "")
-	noColor := fs.Bool("no-color", false, "")
-	failOn := fs.String("fail-on", "P1", "")
-	onlyContainer := fs.String("container", "", "")
-	noContainers := fs.Bool("no-containers", false, "")
-	notifyMode := fs.Bool("notify", false, "")
-	notifyConfig := fs.String("notify-config", "/"+configFile, "")
-	notifyState := fs.String("notify-state", "/"+stateFile, "")
-	offline := fs.Bool("offline", false, "")
-	bundlePath := fs.String("bundle", "", "")
-	sigPath := fs.String("signature", "", "")
-	upstreamPath := fs.String("upstream-bundle", "", "")
-	goPath := fs.String("go-bundle", "", "")
-	baseURL := fs.String("bundle-url", bundle.DefaultBaseURL, "")
-	pubkey := fs.String("pubkey", "", "")
-	root := fs.String("root", "/", "")
-	noExec := fs.Bool("no-exec", false, "")
-	noCache := fs.Bool("no-cache", false, "")
+	fs.StringVar(&o.format, "format", "table", "")
+	fs.BoolVar(&o.all, "all", false, "")
+	fs.StringVar(&o.only, "pkg", "", "")
+	fs.BoolVar(&o.noColor, "no-color", false, "")
+	fs.StringVar(&o.failOn, "fail-on", "P1", "")
+	fs.StringVar(&o.onlyContainer, "container", "", "")
+	fs.BoolVar(&o.noContainers, "no-containers", false, "")
+	fs.BoolVar(&o.notify, "notify", false, "")
+	fs.StringVar(&o.notifyConfig, "notify-config", "/"+configFile, "")
+	fs.StringVar(&o.notifyState, "notify-state", "/"+stateFile, "")
+	fs.BoolVar(&o.offline, "offline", false, "")
+	fs.StringVar(&o.bundlePath, "bundle", "", "")
+	fs.StringVar(&o.sigPath, "signature", "", "")
+	fs.StringVar(&o.upstreamPath, "upstream-bundle", "", "")
+	fs.StringVar(&o.goPath, "go-bundle", "", "")
+	fs.StringVar(&o.baseURL, "bundle-url", bundle.DefaultBaseURL, "")
+	fs.StringVar(&o.pubkey, "pubkey", "", "")
+	fs.StringVar(&o.root, "root", "/", "")
+	fs.BoolVar(&o.noExec, "no-exec", false, "")
+	fs.BoolVar(&o.noCache, "no-cache", false, "")
 	fs.Usage = func() { fmt.Fprint(stderr, usage) }
 	if err := fs.Parse(args); err != nil {
-		return exitUsage
+		return o, false
 	}
-	if *format != "table" && *format != "json" {
+	if o.format != "table" && o.format != "json" {
 		fmt.Fprintln(stderr, "--format 只能是 table 或 json")
-		return exitUsage
+		return o, false
 	}
-	switch *failOn {
+	switch o.failOn {
 	case "P0", "P1", "P2", "P3", "none":
 	default:
 		fmt.Fprintln(stderr, "--fail-on 只能是 P0、P1、P2、P3 或 none")
-		return exitUsage
+		return o, false
 	}
-	if *offline && *bundlePath == "" {
+	if o.offline && o.bundlePath == "" {
 		fmt.Fprintln(stderr, "--offline 需要同时指定 --bundle")
+		return o, false
+	}
+	return o, true
+}
+
+func scan(args []string, stdout, stderr io.Writer) int {
+	o, ok := parseScan(args, stderr)
+	if !ok {
 		return exitUsage
 	}
-
-	fail := func(msg string, err error) int {
-		fmt.Fprintf(stderr, "secwatch: %s：%v\n", msg, err)
+	rep, update, err := buildReport(o, stderr)
+	if err != nil {
 		return exitError
 	}
+	if o.notify {
+		return runNotify(rep, o.notifyConfig, o.notifyState, stdout, stderr, notifySender, time.Now())
+	}
+	if o.only != "" {
+		rep.FilterPackage(o.only)
+	}
+	rep.Color = !o.noColor && colorTerminal(stdout)
+	if o.onlyContainer != "" {
+		sub, ok := rep.SelectContainer(o.onlyContainer)
+		if !ok {
+			fmt.Fprintf(stderr, "secwatch: 没有找到已检查的容器 %q（用 secwatch scan 查看容器列表；需要以 root 运行）\n", o.onlyContainer)
+			return exitUsage
+		}
+		rep = sub
+	}
+	rep.Update = update
+	if o.format == "json" {
+		if err := rep.WriteJSON(stdout); err != nil {
+			fmt.Fprintf(stderr, "secwatch: 输出失败：%v\n", err)
+			return exitError
+		}
+	} else {
+		rep.WriteText(stdout)
+	}
+	if rep.Exceeds(o.failOn) {
+		return exitImportant
+	}
+	return exitOK
+}
 
-	keys, err := trustedKeys(*pubkey)
+// errReported means the error was already printed for the user.
+var errReported = errors.New("scan failed")
+
+// buildReport runs the whole read-only check and returns the report and the
+// newer scanner release, if any. Errors are printed to stderr.
+func buildReport(o scanOpts, stderr io.Writer) (*report.Report, string, error) {
+	fail := func(msg string, err error) (*report.Report, string, error) {
+		fmt.Fprintf(stderr, "secwatch: %s：%v\n", msg, err)
+		return nil, "", errReported
+	}
+
+	keys, err := trustedKeys(o.pubkey)
 	if err != nil {
 		return fail("加载公钥失败", err)
 	}
-	host := system.Host{Root: *root, NoExec: *noExec}
+	host := system.Host{Root: o.root, NoExec: o.noExec}
 	osInfo, err := system.DetectOS(host)
 	if err != nil {
 		return fail("无法识别操作系统", err)
@@ -166,30 +228,30 @@ func scan(args []string, stdout, stderr io.Writer) int {
 
 	var res, upstream *bundle.Result
 	var fetch fetchFunc
-	if *bundlePath != "" {
+	if o.bundlePath != "" {
 		fetch = cachedFetch(func(distro, release string) (*bundle.Result, error) {
 			switch {
 			case distro == osInfo.Distro && release == osInfo.Release:
 				return res, nil
-			case distro == "golang" && *goPath != "":
-				return loadOffline(*goPath, "", "golang", "1", keys)
+			case distro == "golang" && o.goPath != "":
+				return loadOffline(o.goPath, "", "golang", "1", keys)
 			case distro == "golang":
 				return nil, errors.New("离线模式未提供 --go-bundle")
 			}
 			return nil, errors.New("离线模式只提供了本机系统的数据包")
 		})
-		res, err = loadOffline(*bundlePath, *sigPath, osInfo.Distro, osInfo.Release, keys)
-		if err == nil && *upstreamPath != "" {
+		res, err = loadOffline(o.bundlePath, o.sigPath, osInfo.Distro, osInfo.Release, keys)
+		if err == nil && o.upstreamPath != "" {
 			var uerr error
-			if upstream, uerr = loadOffline(*upstreamPath, "", "upstream", "1", keys); uerr != nil {
+			if upstream, uerr = loadOffline(o.upstreamPath, "", "upstream", "1", keys); uerr != nil {
 				return fail("上游数据包校验失败", uerr)
 			}
 		} else if err == nil {
 			notes = append(notes, "离线模式未提供上游数据包（--upstream-bundle），非包管理安装的软件只列出、不判定漏洞。")
 		}
 	} else {
-		src := &bundle.Source{BaseURL: *baseURL, Keys: keys, Version: Version}
-		if !*noCache {
+		src := &bundle.Source{BaseURL: o.baseURL, Keys: keys, Version: Version}
+		if !o.noCache {
 			src.CacheDir = cacheDir()
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -264,42 +326,14 @@ func scan(args []string, stdout, stderr io.Writer) int {
 
 	rep := report.Build(Version, osInfo, inv, result, rt, report.DataInfo{
 		File: res.File, GeneratedAt: res.Bundle.GeneratedAt, KeyID: res.KeyID, FromCache: res.FromCache,
-		Offline: *bundlePath != "",
-	}, notes, *all, &found, outcome)
-	if host.Live() && !*noContainers && os.Geteuid() == 0 {
-		rep.AddContainers(scanContainers(container.Discover("/proc", "/var/lib/docker"), fetch, *all), true)
+		Offline: o.bundlePath != "",
+	}, notes, o.all, &found, outcome)
+	if host.Live() && !o.noContainers && os.Geteuid() == 0 {
+		rep.AddContainers(scanContainers(container.Discover("/proc", "/var/lib/docker"), fetch, o.all), true)
 	}
 
-	update := newerRelease(Version, res.LatestScanner)
 	rep.Hostname = hostname(host)
-	if *notifyMode {
-		rep.Hostname = hostname(host)
-		return runNotify(rep, *notifyConfig, *notifyState, stdout, stderr, notifySender, time.Now())
-	}
-	if *only != "" {
-		rep.FilterPackage(*only)
-	}
-	rep.Color = !*noColor && colorTerminal(stdout)
-	if *onlyContainer != "" {
-		sub, ok := rep.SelectContainer(*onlyContainer)
-		if !ok {
-			fmt.Fprintf(stderr, "secwatch: 没有找到已检查的容器 %q（用 secwatch scan 查看容器列表；需要以 root 运行）\n", *onlyContainer)
-			return exitUsage
-		}
-		rep = sub
-	}
-	rep.Update = update
-	if *format == "json" {
-		if err := rep.WriteJSON(stdout); err != nil {
-			return fail("输出失败", err)
-		}
-	} else {
-		rep.WriteText(stdout)
-	}
-	if rep.Exceeds(*failOn) {
-		return exitImportant
-	}
-	return exitOK
+	return rep, newerRelease(Version, res.LatestScanner), nil
 }
 
 func trustedKeys(path string) (map[string]minisign.PublicKey, error) {
@@ -637,7 +671,10 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 		p := notify.Payload{Host: rep.Hostname, Kind: ev.Kind, Level: level, Title: title, Verdict: msg,
 			New: ev.New, Open: ev.Open, Text: text, Version: Version}
 		if err := send(c, p); err != nil {
-			// The state is not saved: the next run tries again.
+			// What was notified stays as it was, so the next run tries again.
+			prev := notify.LoadState(statePath)
+			prev.LastRun, prev.LastTitle, prev.LastResult = now, title, "通知发送失败，下次重试"
+			notify.SaveState(statePath, prev)
 			fmt.Fprintf(stderr, "secwatch: 通知发送失败，下次检查会重试：%v\n", err)
 			fmt.Fprintf(stdout, "%s：%s；通知发送失败\n", title, msg)
 			return exitError
@@ -646,6 +683,7 @@ func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.
 			"new": fmt.Sprintf("已通知新发现的 %d 项", len(ev.New)), "reminder": "已发送每日提醒", "resolved": "已通知问题已恢复",
 		}[ev.Kind]
 	}
+	next.LastRun, next.LastTitle, next.LastResult = now, title, result
 	if err := notify.SaveState(statePath, next); err != nil {
 		fmt.Fprintf(stderr, "secwatch: 保存通知记录失败：%v\n", err)
 	}

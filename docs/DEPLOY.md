@@ -217,7 +217,7 @@ $P exec -T worker python -m collector.cli bundles
 
 ### 2026-10-24 更新：新版本提示
 
-按“日常更新”部署即可（无迁移）。部署后可立即执行一次，不必等定时任务（每小时一次）：
+按“日常更新”部署即可（无迁移）。部署后可立即执行一次，不必等定时任务（每 15 分钟一次）：
 
 ```sh
 $P exec -T worker python -m collector.cli release

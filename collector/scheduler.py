@@ -33,7 +33,7 @@ TASKS = {
     "epss": 86400,
     "nodejs": 21600,
     "golang": 21600,
-    "release": 3600,
+    "release": 900,  # GitHub allows 60 unauthenticated requests per hour; 4 are used
     "telegram": 300,
 }
 

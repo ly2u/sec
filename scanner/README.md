@@ -44,6 +44,17 @@ secwatch scan --offline --bundle debian-12.<hash>.json.zst   # 离线
 
 支持：Debian 11–13、Ubuntu 20.04/22.04/24.04、Rocky Linux 8/9、AlmaLinux 8/9、Alpine 3.22–3.24。
 
+## 定时检查与通知
+
+```
+sudo secwatch schedule                       # 交互设置 Telegram 机器人或 Webhook，默认每小时检查
+sudo secwatch schedule --every 30m --notify-on P0 --telegram-chat 123456789
+sudo secwatch schedule --status              # 查看设置与状态
+sudo secwatch schedule --remove              # 关闭并删除全部配置
+```
+
+开启前先发测试消息。之后由 systemd 定时器运行 `secwatch scan --notify`（文件系统只读），新问题立即通知，未修复的每天最多提醒一次，修好后通知“已恢复”。消息只发到你配置的渠道，不经过 SecWatch 服务器；不会自动修复。这是扫描器唯一会写入系统的功能，只在你运行 `schedule` 时发生。
+
 ## 更新
 
 漏洞数据每次扫描时自动获取最新的签名数据包，**不需要为了新漏洞更新程序**。程序本身有新版本时，报告最后会多一行提示；更新方法就是重新运行安装命令（会校验发布签名后覆盖旧版本）：

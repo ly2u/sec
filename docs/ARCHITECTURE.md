@@ -208,6 +208,17 @@ Go 程序在二进制里记录了模块列表和编译用的 Go 版本（即 `go
 - **报告**：每个程序一行（“Go 程序 / Go 程序内置组件”）。`--pkg 程序名` 给出组件表（程序本身、Go 标准库、各依赖的当前版本、漏洞数、修复所需的最低版本）和具体步骤：从模块路径推出的项目发布页（GitHub/GitLab）、替换哪个文件、从 cgroup 读出的 systemd 服务的重启命令；第三方源的程序给包管理器命令。逐个 CVE 放在 `--pkg 程序名 --all`。离线模式用 `--go-bundle` 提供数据包。
 - **secwatch 自身**不在扫描范围内：它靠新版本提示保持更新；发布流程用最新稳定版 Go 编译，并在 `govulncheck` 发现可达漏洞时停止发布；Dependabot 负责依赖升级 PR。
 
+### 定时检查与通知（已实现，用户显式开启）
+
+站长决定（2026-10-25）：扫描器可以由用户开启定时检查，并把新问题通知到用户自己的 Telegram 或 Webhook。这是“扫描器只读、不上传”原则的唯一、显式的例外，边界如下：
+
+- **只有 `secwatch schedule` 会改动系统**，并且只在用户运行时：写 `/etc/secwatch/notify.json`（root 所有、600 权限，含 Bot Token；权限过宽时拒绝读取）和 systemd 的 `secwatch.service`/`secwatch.timer`。`--remove` 停用并删除全部文件与通知记录。没有 systemd 的系统只保存配置，并打印一行 crontab 让用户自己添加。`secwatch scan` 本身依然什么都不写。
+- **开启前先发测试消息**，发送失败则不写任何文件。Token 不出现在命令行参数（会进进程列表），交互输入或用环境变量 `SECWATCH_TELEGRAM_TOKEN`；错误信息中会抹去 Token。
+- **定时运行**：`scan --notify`，间隔最短 30 分钟（数据包最多每小时更新），`RandomizedDelaySec` 错开各服务器的请求。服务单元启用 `ProtectSystem=strict`、`ProtectHome=read-only`、`NoNewPrivileges`：除缓存与状态目录外整个文件系统只读，用 systemd 强制兑现“扫描只读”。退出码 3 视为成功。
+- **何时通知**：达到所选级别（P0/P1/P2，默认 P1）或已被在野利用的项目。新问题立即通知；未修复的每 24 小时最多提醒一次；全部修复后通知“已恢复”。去重记录在 `/var/lib/secwatch/notify-state.json`；发送失败时不更新记录，下次运行重试。
+- **发什么**：纯文本短消息——主机名、一行结论、新增/未处理的软件包名称与级别、查看详情的命令。不发软件清单或版本全集。只发往用户配置的渠道，从不发往 SecWatch 服务器；从不自动修复。Webhook 收到同内容的 JSON。
+- 国内机器可用 `--telegram-api` 指定自建的 Telegram API 反代（必须 https）。
+
 ### 新版本提示（已实现）
 
 worker 每 15 分钟读取 GitHub 最新正式版本（发布后最长约 15 分钟加 Cloudflare 缓存 1 分钟才会提示）（只接受 `vX.Y.Z`，忽略草稿和预发布），写入 `manifest.json` 的 `scanner.latest`。这个字段不计入数据包指纹，发布新版本不会重建数据包。扫描器每次扫描本来就要读取 manifest，较新时在报告最后提示一行安装命令。manifest 尚未签名，所以这个字段只用作提示：扫描器**从不自动更新**，用户运行的安装脚本仍会校验发布签名。v0.1.3 及以前的版本不认识这个字段，不会提示。

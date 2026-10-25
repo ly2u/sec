@@ -101,3 +101,22 @@ func TestChecklistGutterOnColourTerminals(t *testing.T) {
 		t.Error("plain output (logs, pipes) has no bar")
 	}
 }
+
+func TestAlertsAndVerdict(t *testing.T) {
+	r := outdatedHost(false)
+	level, title, _ := r.Verdict()
+	if level != "urgent" || title != "有紧急问题" {
+		t.Errorf("verdict %s %s", level, title)
+	}
+	p1 := r.Alerts("P1")
+	if len(p1) != 3 || p1[0].Text != "inetutils（立即处理 · 已被在野利用）" || p1[0].Key != "本机/inetutils" {
+		t.Fatalf("P1 alerts: %+v", p1)
+	}
+	if n := len(r.Alerts("P2")); n != 23 {
+		t.Errorf("P2 alerts: %d", n)
+	}
+	c := racknerd()
+	if lvl, _, _ := c.Verdict(); lvl != "ok" || len(c.Alerts("P1")) != 0 {
+		t.Error("a host with only P2 items has nothing to notify at P1")
+	}
+}

@@ -63,8 +63,9 @@ func pkgNames(gs []*pkgGroup) string {
 
 func urgent(g *pkgGroup) bool { return g.priority == "P0" || g.priority == "P1" }
 
-// statusLine is the one-line verdict for the host and its containers.
-func (r *Report) statusLine(t term, fixable []*pkgGroup) string {
+// verdict is the one-line conclusion for the host and its containers: the
+// colour, the title ("● 状态良好") and the sentence after it.
+func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 	p0, p1, kev, ransom := 0, 0, 0, 0
 	count := func(gs []*pkgGroup) {
 		for _, g := range gs {
@@ -90,45 +91,34 @@ func (r *Report) statusLine(t term, fixable []*pkgGroup) string {
 		}
 	}
 	items := len(fixable) + len(r.containersToFix())
-	l1 := 0
-	for _, g := range fixable {
-		if !g.l2 {
-			l1++
-		}
-	}
-	style := cGreen
-	fmt.Fprint(t, " ")
 	switch {
 	case p0 > 0 && kev > 0:
-		style = cRed
-		t.paint(cRed, "● 有紧急问题")
 		where := ""
 		if hostKEV == 0 {
 			where = "容器中 "
 		}
 		if ransom > 0 {
-			fmt.Fprintf(t, "  %s%d 个软件包的漏洞已被黑客实际利用（其中 %d 个被勒索软件利用），请今天处理\n", where, kev, ransom)
-		} else {
-			fmt.Fprintf(t, "  %s%d 个软件包的漏洞已被黑客实际利用，请今天处理\n", where, kev)
+			return cRed, "有紧急问题", fmt.Sprintf("%s%d 个软件包的漏洞已被黑客实际利用（其中 %d 个被勒索软件利用），请今天处理", where, kev, ransom)
 		}
+		return cRed, "有紧急问题", fmt.Sprintf("%s%d 个软件包的漏洞已被黑客实际利用，请今天处理", where, kev)
 	case p0 > 0:
-		style = cRed
-		t.paint(cRed, "● 有紧急问题")
-		fmt.Fprintf(t, "  %d 个对外服务有严重漏洞，请今天处理\n", p0)
+		return cRed, "有紧急问题", fmt.Sprintf("%d 个对外服务有严重漏洞，请今天处理", p0)
 	case p1 > 0:
-		style = cYellow
-		t.paint(cYellow, "● 建议尽快更新")
-		fmt.Fprintf(t, "  %d 项漏洞被利用的可能性较高，或在对外服务中\n", p1)
+		return cYellow, "建议尽快更新", fmt.Sprintf("%d 项漏洞被利用的可能性较高，或在对外服务中", p1)
 	case items > 0:
-		t.paint(cGreen, "● 状态良好")
-		fmt.Fprintf(t, "  没有需要立即处理的漏洞，有 %d 项建议更新\n", items)
+		return cGreen, "状态良好", fmt.Sprintf("没有需要立即处理的漏洞，有 %d 项建议更新", items)
 	case r.Summary.UnfixedNotable > 0:
-		t.paint(cGreen, "● 状态良好")
-		fmt.Fprintf(t, "  没有需要更新的软件，%d 项值得关注的问题在等发行版补丁\n", r.Summary.UnfixedNotable)
-	default:
-		t.paint(cGreen, "● 状态良好")
-		fmt.Fprintln(t, "  没有发现需要处理的安全问题")
+		return cGreen, "状态良好", fmt.Sprintf("没有需要更新的软件，%d 项值得关注的问题在等发行版补丁", r.Summary.UnfixedNotable)
 	}
+	return cGreen, "状态良好", "没有发现需要处理的安全问题"
+}
+
+// statusLine prints the verdict and returns its colour for the gutter.
+func (r *Report) statusLine(t term, fixable []*pkgGroup) string {
+	style, title, msg := r.verdict(fixable)
+	fmt.Fprint(t, " ")
+	t.paint(style, "● "+title)
+	fmt.Fprintln(t, "  "+msg)
 	return style
 }
 

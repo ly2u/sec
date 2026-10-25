@@ -23,6 +23,7 @@ import (
 	"github.com/ly2u/sec/scanner/internal/gobin"
 	"github.com/ly2u/sec/scanner/internal/l2"
 	"github.com/ly2u/sec/scanner/internal/match"
+	"github.com/ly2u/sec/scanner/internal/notify"
 	"github.com/ly2u/sec/scanner/internal/procinfo"
 	"github.com/ly2u/sec/scanner/internal/report"
 	"github.com/ly2u/sec/scanner/internal/system"
@@ -42,6 +43,7 @@ const (
 
 const usage = `用法：
   secwatch scan [选项]     只读扫描本机漏洞
+  secwatch schedule [选项] 开启定时检查，发现新问题时通知你的 Telegram 或 Webhook（需要 root）
   secwatch version         显示版本
 
 scan 选项：
@@ -63,6 +65,17 @@ scan 选项：
   --no-exec                不调用任何外部程序（RPM 系统需要调用 rpm，无法使用）
   --no-cache               不读写本地缓存（~/.cache/secwatch）
 
+schedule 选项：
+  --every 1h               检查间隔，最短 30m（例如 30m、6h、1d），默认 1h
+  --notify-on P1           达到该级别（或有漏洞已被在野利用）时通知：P0、P1、P2，默认 P1
+  --telegram-chat ID       Telegram Chat ID；Token 交互输入，或用环境变量 SECWATCH_TELEGRAM_TOKEN
+  --telegram-api URL       自建的 Telegram API 反代（https），国内机器可用
+  --webhook URL            Webhook 地址（POST JSON）
+  --status                 查看定时检查的设置与状态
+  --remove                 关闭定时检查，删除配置、定时器与通知记录
+  不带渠道参数时会逐项询问。开启前先发一条测试消息；新问题立即通知，未修复的每天最多提醒一次，
+  修好后通知“已恢复”。只发到你自己的渠道，不经过 SecWatch 服务器；不会自动修复。
+
 退出码：0 无紧急问题 · 3 存在可处理的 P0/P1 问题（见 --fail-on）或已被在野利用的漏洞 · 1 扫描失败 · 2 参数错误
 `
 
@@ -74,6 +87,8 @@ func main() {
 	switch os.Args[1] {
 	case "scan":
 		os.Exit(scan(os.Args[2:], os.Stdout, os.Stderr))
+	case "schedule":
+		os.Exit(schedule(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	case "version", "--version", "-v":
 		fmt.Println("secwatch", Version)
 	case "help", "--help", "-h":
@@ -94,6 +109,9 @@ func scan(args []string, stdout, stderr io.Writer) int {
 	failOn := fs.String("fail-on", "P1", "")
 	onlyContainer := fs.String("container", "", "")
 	noContainers := fs.Bool("no-containers", false, "")
+	notifyMode := fs.Bool("notify", false, "")
+	notifyConfig := fs.String("notify-config", "/"+configFile, "")
+	notifyState := fs.String("notify-state", "/"+stateFile, "")
 	offline := fs.Bool("offline", false, "")
 	bundlePath := fs.String("bundle", "", "")
 	sigPath := fs.String("signature", "", "")
@@ -254,6 +272,10 @@ func scan(args []string, stdout, stderr io.Writer) int {
 
 	update := newerRelease(Version, res.LatestScanner)
 	rep.Hostname = hostname(host)
+	if *notifyMode {
+		rep.Hostname = hostname(host)
+		return runNotify(rep, *notifyConfig, *notifyState, stdout, stderr, notifySender, time.Now())
+	}
 	if *only != "" {
 		rep.FilterPackage(*only)
 	}
@@ -583,3 +605,53 @@ func hostname(h system.Host) string {
 }
 
 var hostRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$`)
+
+// notifySender is replaced in tests.
+var notifySender = sendNotification
+
+func sendNotification(c *notify.Config, p notify.Payload) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return notify.Send(ctx, c, p)
+}
+
+// runNotify is the scheduled run (secwatch scan --notify): decide from this
+// scan and what was already notified whether to send anything, and print
+// one line for the journal.
+func runNotify(rep *report.Report, cfgPath, statePath string, stdout, stderr io.Writer,
+	send func(*notify.Config, notify.Payload) error, now time.Time) int {
+	c, err := notify.Load(cfgPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "secwatch: 读取通知配置失败：%v（开启定时检查：sudo secwatch schedule）\n", err)
+		return exitError
+	}
+	level, title, msg := rep.Verdict()
+	ev, next := notify.Decide(notify.LoadState(statePath), rep.Alerts(c.NotifyOn), now)
+	result := "无需通知"
+	if ev != nil {
+		host := rep.Hostname
+		if host == "" {
+			host = "服务器"
+		}
+		text := notify.Message(host, title, msg, ev, Version)
+		p := notify.Payload{Host: rep.Hostname, Kind: ev.Kind, Level: level, Title: title, Verdict: msg,
+			New: ev.New, Open: ev.Open, Text: text, Version: Version}
+		if err := send(c, p); err != nil {
+			// The state is not saved: the next run tries again.
+			fmt.Fprintf(stderr, "secwatch: 通知发送失败，下次检查会重试：%v\n", err)
+			fmt.Fprintf(stdout, "%s：%s；通知发送失败\n", title, msg)
+			return exitError
+		}
+		result = map[string]string{
+			"new": fmt.Sprintf("已通知新发现的 %d 项", len(ev.New)), "reminder": "已发送每日提醒", "resolved": "已通知问题已恢复",
+		}[ev.Kind]
+	}
+	if err := notify.SaveState(statePath, next); err != nil {
+		fmt.Fprintf(stderr, "secwatch: 保存通知记录失败：%v\n", err)
+	}
+	fmt.Fprintf(stdout, "%s：%s；%s\n", title, msg, result)
+	if rep.Exceeds(c.NotifyOn) {
+		return exitImportant
+	}
+	return exitOK
+}

@@ -266,7 +266,8 @@ func TestL2EndToEnd(t *testing.T) {
 	put(t, root, "var/lib/dpkg/status", "Package: docker-ce\nStatus: install ok installed\nVersion: 5:29.8.2-1~debian.12~bookworm\n")
 	lists := "var/lib/apt/lists/"
 	put(t, root, lists+"download.docker.com_linux_debian_dists_bookworm_InRelease", "Origin: Docker\nLabel: Docker CE\n")
-	put(t, root, lists+"download.docker.com_linux_debian_dists_bookworm_stable_binary-amd64_Packages", "Package: docker-ce\nVersion: 5:29.8.2-1~debian.12~bookworm\n")
+	dockerList := lists + "download.docker.com_linux_debian_dists_bookworm_stable_binary-amd64_Packages"
+	put(t, root, dockerList, "Package: docker-ce\nVersion: 5:29.8.2-1~debian.12~bookworm\n\nPackage: docker-ce\nVersion: 5:29.9.0-1~debian.12~bookworm\n")
 
 	s, _ := testutil.NewSigner()
 	out := t.TempDir()
@@ -328,6 +329,26 @@ func TestL2EndToEnd(t *testing.T) {
 		t.Errorf("docker-ce was evaluated by L2 and must not be listed as uncovered\n%s", text)
 	}
 	t.Log("\n" + text)
+
+	// The repository has nothing newer yet (as with caddy 2.11.7): upgrading
+	// changes nothing, so no upgrade step and no "升级即可".
+	put(t, root, dockerList, "Package: docker-ce\nVersion: 5:29.8.2-1~debian.12~bookworm\n")
+	text = detail()
+	for _, want := range []string{
+		"Docker Engine             1 个漏洞    源里已是最新版，等作者发布新版",
+		"程序        ! 1 个建议更新，1 个在等作者发布新版",
+		"1  secwatch scan --pkg Node.js",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "--only-upgrade docker-ce") {
+		t.Errorf("no upgrade command when the repository has nothing newer\n%s", text)
+	}
+	if out := detail("--pkg", "docker-ce"); !strings.Contains(out, "软件源里已经是最新版，暂时无法升级") {
+		t.Errorf("--pkg explains why there is nothing to run\n%s", out)
+	}
 }
 
 // Containers are scanned through their root filesystems. Here the roots are
@@ -462,7 +483,7 @@ func TestGoProgramsEndToEnd(t *testing.T) {
 	status, _ := os.ReadFile(filepath.Join(root, "var/lib/dpkg/status"))
 	put(t, root, "var/lib/dpkg/status", string(status)+"\nPackage: caddy\nStatus: install ok installed\nVersion: 2.10.2\n")
 	put(t, root, "var/lib/dpkg/info/caddy.list", "/usr\n/usr/bin\n/usr/bin/caddy\n")
-	put(t, root, "var/lib/apt/lists/dl.cloudsmith.io_public_caddy_stable_deb_debian_dists_any-version_main_binary-amd64_Packages", "Package: caddy\nVersion: 2.10.2\n")
+	put(t, root, "var/lib/apt/lists/dl.cloudsmith.io_public_caddy_stable_deb_debian_dists_any-version_main_binary-amd64_Packages", "Package: caddy\nVersion: 2.10.2\n\nPackage: caddy\nVersion: 2.11.7\n")
 
 	s, _ := testutil.NewSigner()
 	out := t.TempDir()

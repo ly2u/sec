@@ -63,6 +63,30 @@ func pkgNames(gs []*pkgGroup) string {
 
 func urgent(g *pkgGroup) bool { return g.priority == "P0" || g.priority == "P1" }
 
+// noUpdate tells whether a program from a third-party repository is already
+// at the newest version that repository offers: upgrading changes nothing.
+func (r *Report) noUpdate(g *pkgGroup) bool {
+	f := g.findings[0]
+	if !g.l2 || f.Method != "package" || len(f.Binaries) == 0 {
+		return false
+	}
+	for _, b := range f.Binaries {
+		if !r.noNewer[b] {
+			return false
+		}
+	}
+	return true
+}
+
+// waiting tells whether nothing can be done about a program until its
+// author publishes a new release.
+func (r *Report) waiting(g *pkgGroup) bool {
+	if r.noUpdate(g) {
+		return true
+	}
+	return g.l2 && g.findings[0].Method != "package" && g.goProg && g.target == "" && !urgent(g)
+}
+
 // verdict is the one-line conclusion for the host and its containers: the
 // colour, the title ("● 状态良好") and the sentence after it.
 func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
@@ -91,6 +115,13 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 		}
 	}
 	items := len(fixable) + len(r.containersToFix())
+	waiting := 0
+	for _, g := range fixable {
+		if r.waiting(g) && !urgent(g) {
+			waiting++
+		}
+	}
+	items -= waiting
 	switch {
 	case p0 > 0 && kev > 0:
 		where := ""
@@ -107,6 +138,8 @@ func (r *Report) verdict(fixable []*pkgGroup) (style, title, msg string) {
 		return cYellow, "建议尽快更新", fmt.Sprintf("%d 项漏洞被利用的可能性较高，或在对外服务中", p1)
 	case items > 0:
 		return cGreen, "状态良好", fmt.Sprintf("没有需要立即处理的漏洞，有 %d 项建议更新", items)
+	case waiting > 0:
+		return cGreen, "状态良好", fmt.Sprintf("没有需要你处理的问题，%d 个程序在等作者发布新版", waiting)
 	case r.Summary.UnfixedNotable > 0:
 		return cGreen, "状态良好", fmt.Sprintf("没有需要更新的软件，%d 项值得关注的问题在等发行版补丁", r.Summary.UnfixedNotable)
 	}
@@ -232,10 +265,25 @@ func (r *Report) writeChecklist(t term) {
 	})
 	switch {
 	case len(l2) > 0:
-		mark, style, text := "!", cYellow, fmt.Sprintf("%d 个建议更新", len(l2))
+		wait := 0
+		for _, g := range l2 {
+			if r.waiting(g) {
+				wait++
+			}
+		}
+		mark, style, text := "!", cYellow, fmt.Sprintf("%d 个建议更新", len(l2)-wait)
+		switch {
+		case wait == len(l2):
+			mark, style, text = "·", cDim, fmt.Sprintf("%d 个有已知漏洞，暂时没有新版本可升级", wait)
+		case wait > 0:
+			text += fmt.Sprintf("，%d 个在等作者发布新版", wait)
+		}
 		for _, g := range l2 {
 			if urgent(g) {
-				mark, style, text = "✗", cRed, fmt.Sprintf("%d 个需要更新", len(l2))
+				mark, style = "✗", cRed
+				if wait == 0 {
+					text = fmt.Sprintf("%d 个需要更新", len(l2))
+				}
 			}
 		}
 		r.row(block, "程序", mark, style, text)
@@ -443,6 +491,9 @@ func hasKernelName(g *pkgGroup) bool {
 // programAction is the "what to do" cell of a program row.
 func (r *Report) programAction(g *pkgGroup, ref map[string]int) (string, string) {
 	f := g.findings[0]
+	if r.noUpdate(g) {
+		return "源里已是最新版，等作者发布新版", cDim
+	}
 	if f.Method == "package" {
 		if i, ok := ref["upgrade"]; ok {
 			return fmt.Sprintf("升级即可，见第 %d 步", i), cCmd

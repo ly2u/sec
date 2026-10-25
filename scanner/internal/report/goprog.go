@@ -116,7 +116,12 @@ func (r *Report) goSteps(g *pkgGroup) []string {
 	own := g.target != ""
 	if f.Method == "package" {
 		if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
-			steps = append(steps, r.upgradeCommand(pkgs)+"    # 从它原来的第三方软件源升级")
+			if r.noUpdate(g) {
+				steps = append(steps, "现在不用操作：你装的已经是软件源里的最新版，需要等作者用新版 Go 重新编译发布",
+					"作者发布新版后（再次检查时会提示“升级即可”）："+r.upgradeCommand(pkgs))
+			} else {
+				steps = append(steps, r.upgradeCommand(pkgs)+"    # 从它原来的第三方软件源升级")
+			}
 		}
 	} else {
 		get := "到官网或原下载渠道"

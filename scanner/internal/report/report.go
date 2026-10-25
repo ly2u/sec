@@ -57,6 +57,7 @@ type Report struct {
 	showAll           bool
 	only              string // --pkg: show one package in full
 	stalePackages     map[string]bool
+	noNewer           map[string]bool // third-party packages already at the repository's newest version
 	// Hostname of the scanned machine, shown in the report header.
 	Hostname string `json:"hostname,omitempty"`
 	// Update: a newer scanner release ("v0.1.4"), set by the caller.
@@ -140,7 +141,14 @@ func Build(scanner string, o system.OS, inv *system.Inventory, res match.Result,
 		Schema: SchemaVersion, Scanner: scanner, ScannedAt: time.Now().UTC(),
 		OS:   OSInfo{Name: o.PrettyName, Distro: o.Distro, Release: o.Release},
 		Data: data, Kernel: res.Kernel, Runtime: rt, ThirdParty: res.ThirdParty,
-		kind: o.Kind, distro: o.Distro, showAll: showAll, stalePackages: map[string]bool{},
+		kind: o.Kind, distro: o.Distro, showAll: showAll, stalePackages: map[string]bool{}, noNewer: map[string]bool{},
+	}
+	if inv.Indexed {
+		for _, p := range inv.Packages {
+			if p.Origin == system.ThirdParty && p.Newer == "" {
+				r.noNewer[p.Name] = true
+			}
+		}
 	}
 	if found != nil {
 		r.L2 = found

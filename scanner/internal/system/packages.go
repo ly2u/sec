@@ -46,6 +46,9 @@ type Package struct {
 	Arch          string `json:"arch,omitempty"`
 	Origin        Origin `json:"origin"`
 	OriginLabel   string `json:"origin_label,omitempty"`
+	// Newer is the newest version in the apt lists above the installed one
+	// ("" when there is none, or when the lists were not read).
+	Newer string `json:"newer,omitempty"`
 }
 
 // ValidPackageName is the whitelist used before a name may appear in any
@@ -297,6 +300,22 @@ func (idx *aptIndex) addList(h Host, name string) {
 	})
 }
 
+// newer returns the newest version the apt lists offer above p's, if any.
+func (idx *aptIndex) newer(p Package) string {
+	best := ""
+	for v := range idx.versions[p.Name] {
+		if c, err := version.Compare(version.Deb, v, p.Version); err != nil || c <= 0 {
+			continue
+		}
+		if best == "" {
+			best = v
+		} else if c, err := version.Compare(version.Deb, v, best); err == nil && c > 0 {
+			best = v
+		}
+	}
+	return best
+}
+
 var (
 	readableLabel = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ._/+-]{0,47}$`)
 	hostName      = regexp.MustCompile(`^[A-Za-z0-9.-]{1,253}$`)
@@ -468,6 +487,8 @@ type Inventory struct {
 	// UbuntuPro is true when ESM repositories are configured, i.e. fixes that
 	// require a Pro subscription are installable on this machine.
 	UbuntuPro bool
+	// Indexed is true when the apt lists were read, so Package.Newer is known.
+	Indexed bool
 }
 
 // ReadPackages reads installed packages for the detected OS.
@@ -493,7 +514,9 @@ func ReadPackages(h Host, o OS) (*Inventory, error) {
 		}
 		for i := range pkgs {
 			pkgs[i].Origin, pkgs[i].OriginLabel = idx.classify(pkgs[i])
+			pkgs[i].Newer = idx.newer(pkgs[i])
 		}
+		inv.Indexed = idx.lists > 0
 		inv.UbuntuPro = idx.esm
 		inv.Packages = pkgs
 	case version.RPM:

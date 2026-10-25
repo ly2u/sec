@@ -320,6 +320,8 @@ func (r *Report) fixSteps(fixable []*pkgGroup) (steps [][2]string, ref map[strin
 		switch {
 		case !g.l2:
 			distro = true
+		case r.noUpdate(g):
+			// Already the newest the repository has: nothing to run yet.
 		case g.findings[0].Method == "package":
 			thirdParty = append(thirdParty, g)
 		default:
@@ -565,7 +567,11 @@ func (r *Report) remedy(g *pkgGroup) ([][2]string, []string) {
 		var bins []string
 		if f.Method == "package" {
 			if pkgs, bad := safeNames(f.Binaries); len(pkgs) > 0 && len(bad) == 0 {
-				add("修复", r.upgradeCommand(pkgs)+"（从原第三方软件源升级）")
+				if r.noUpdate(g) {
+					add("修复", "软件源里已经是最新版，暂时无法升级；作者发布新版后运行 "+r.upgradeCommand(pkgs))
+				} else {
+					add("修复", r.upgradeCommand(pkgs)+"（从原第三方软件源升级）")
+				}
 				bins = pkgs
 			}
 		} else if f.Guidance != "" {

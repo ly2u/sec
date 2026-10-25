@@ -55,9 +55,9 @@ func TestChecklistOnMostlyCleanHost(t *testing.T) {
 	t.Log("\n" + out)
 	for _, want := range []string{
 		"LY2U SecWatch v0.1.5  racknerd-5a83f4d · Debian 12 · 内核 6.1.0-54-amd64 · 只读检查",
-		" ● 状态良好  没有需要立即处理的漏洞，有 3 项建议更新",
+		" ● 状态良好  没有需要立即处理的漏洞，有 2 项建议更新",
 		"   系统软件包  ✓ 730 个都是最新",
-		"   程序        ! 2 个建议更新",
+		"   程序        ! 1 个建议更新，1 个在等作者发布新版",
 		"caddy          对外服务   14 个漏洞   升级即可，见第 1 步",
 		"komari-agent              98 个漏洞   等作者发布新版，不急",
 		"qqbot-vps-api  Debian 13  8 个软件包  重建镜像，见第 3 步",
@@ -133,5 +133,31 @@ func TestChecklistPointsToMenuWhenNotScheduled(t *testing.T) {
 	}
 	if n := strings.Count(out, "\n"); n > 23 {
 		t.Errorf("%d lines", n)
+	}
+}
+
+// caddy from Caddy's repository is already the newest version there: its
+// Go standard library findings wait for a new release, like komari-agent.
+func TestChecklistProgramAlreadyNewestInRepo(t *testing.T) {
+	r := racknerd()
+	r.noNewer["caddy"] = true
+	out := render(r)
+	for _, want := range []string{
+		" ● 状态良好  没有需要立即处理的漏洞，有 1 项建议更新",
+		"   程序        · 2 个有已知漏洞，暂时没有新版本可升级",
+		"caddy          对外服务   14 个漏洞   源里已是最新版，等作者发布新版",
+		"   1  secwatch scan --container qqbot-vps-api",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "only-upgrade caddy") || strings.Contains(out, "restart caddy") {
+		t.Errorf("nothing to run for caddy\n%s", out)
+	}
+	// Without the container, nothing at all is left to do.
+	r.Containers = nil
+	if out := render(r); !strings.Contains(out, " ● 状态良好  没有需要你处理的问题，2 个程序在等作者发布新版") {
+		t.Errorf("%s", out)
 	}
 }

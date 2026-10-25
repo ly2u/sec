@@ -388,3 +388,11 @@ def test_copy_buttons_are_progressive(client):
     assert "fetch(" not in script.text and "XMLHttpRequest" not in script.text
     hostile = client.get("/go", params={"id": "<script>alert(1)</script>"})
     assert hostile.status_code == 400 and hostile.text.count("<script") == 1
+
+
+def test_easter_egg_contact(client):
+    page = client.get("/about")
+    assert "io@u2ly.com" in page.text and "彩蛋" in page.text  # in the page source only
+    humans = client.get("/humans.txt")
+    assert humans.status_code == 200 and "io@u2ly.com" in humans.text
+    assert "io@u2ly.com" in client.get("/static/copy.js").text

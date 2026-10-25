@@ -2,18 +2,21 @@
 
 只读的 Linux 漏洞自检工具。Go 静态编译单文件，无运行时依赖。
 
-> 状态：开发中（V0.1）。尚未发布正式版本，官方数据源 `sec.ly2u.com` 尚未上线。
+安装：`curl -fsSL https://sec.ly2u.com/install.sh | sh`，发布版本见 [Releases](https://github.com/ly2u/sec/releases)。
 
 ## 它做什么
 
 | 层 | 内容 |
 |---|---|
 | L1 发行版包 | 读取 dpkg / rpm / apk 包数据库，按发行版安全数据（含回移植修复）判定，使用各包管理器原生的版本比较算法 |
+| L2 非包管理安装 | 宝塔、LNMP、源码编译、官方二进制、nvm 等安装的软件，以及第三方软件源的软件包，按上游版本判定 |
+| Go 程序 | 读取 Go 程序记录的模块与 Go 版本（`debug/buildinfo`），对照 Go 漏洞库；给出发布页、替换与重启步骤 |
+| 容器 | 经 `/proc/PID/root` 只读检查运行中容器的系统软件包（`openat2` 限定在容器根目录内），不调用 docker |
 | L3 补丁是否生效 | 只判断**正在运行**的内核；发现"已安装修复内核但未重启"；发现仍在使用升级前旧库的服务 |
 | L4 暴露面 | 对外监听的进程加载了哪些软件包，用于提高优先级 |
 | 优先级 | CISA KEV（在野利用）、FIRST EPSS、CVSS 与是否对外暴露，见 `docs/ARCHITECTURE.md` D4 |
 
-L2（宝塔、源码编译、nvm 等非包管理安装的上游版本检测）尚未实现。来自第三方软件源（nginx.org、Docker、NodeSource、sury 等）的软件包目前会单独列出，结论为"未知"，不会套用发行版数据误判。
+没有上游数据的第三方软件包会单独列为“未检查”，不会套用发行版数据误判。
 
 ## 信任模型
 
@@ -27,7 +30,7 @@ L2（宝塔、源码编译、nvm 等非包管理安装的上游版本检测）�
 ## 用法
 
 ```
-secwatch scan                       # 一屏摘要：结论、表格、修复命令（建议以 root 运行）
+secwatch scan                       # 体检清单：结论、逐项问题与处理方式、修复命令（建议以 root 运行）
 secwatch scan --format json         # 机器可读输出
 secwatch scan --pkg openssh         # 只看一个软件包：全部漏洞、升级与验证命令
 secwatch scan --all                 # 完整报告（全部结果、每个软件包的命令与参考链接）

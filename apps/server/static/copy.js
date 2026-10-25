@@ -1,5 +1,10 @@
 // Copy buttons. The page works without this file: buttons stay hidden until it runs.
 (function () {
+  // A hello for whoever opens the developer tools.
+  if (window.console && console.log) {
+    console.log("%c LY2U SecWatch %c 打开开发者工具的你，大概也是同道中人。想聊安全或提建议：io@u2ly.com",
+      "background:#3fb950;color:#0d1117;font-weight:700;border-radius:3px", "color:inherit");
+  }
   function flash(button, text) {
     var label = button.getAttribute("data-label") || button.textContent;
     button.setAttribute("data-label", label);

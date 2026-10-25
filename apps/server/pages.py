@@ -262,6 +262,24 @@ def rss(session: DB):
     )
 
 
+HUMANS = """/* TEAM */
+项目：LY2U SecWatch
+站点：https://sec.ly2u.com
+源码：https://github.com/ly2u/sec
+彩蛋：既然你找到了这里，打个招呼吧 —— io@u2ly.com
+
+/* SITE */
+语言：中文
+技术：FastAPI、PostgreSQL、Go（扫描器）
+原则：只读、不上传、数据包签名、开源可审计
+"""
+
+
+@router.get("/humans.txt")
+def humans():
+    return PlainTextResponse(HUMANS, headers={"Cache-Control": PAGE_CACHE})
+
+
 @router.get("/robots.txt")
 def robots():
     return PlainTextResponse(

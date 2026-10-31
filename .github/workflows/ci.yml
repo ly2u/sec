@@ -6,8 +6,8 @@ jobs:
   python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # 数据包签名与篡改测试需要真实的 minisign 二进制（生产镜像中由 Dockerfile 安装）
@@ -26,8 +26,8 @@ jobs:
   scanner:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # Always the newest stable Go: the binaries carry its standard
           # library, and older lines stop receiving security fixes.
